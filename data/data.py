@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import pickle
 import sys
+import warnings
 import re
 import shutil
 import subprocess
 import importlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -94,6 +100,9 @@ _NUMERIC_FILE_EXTENSIONS = {
 	".mat",
 }
 
+_LOADER_CACHE_VERSION = "v2"
+_DATAFRAME_MEMORY_CACHE: dict[str, pd.DataFrame] = {}
+
 
 @dataclass(frozen=True)
 class DroneRFArchive:
@@ -149,6 +158,207 @@ def _render_progress_bar(current: int, total: int, width: int = 32) -> str:
 	filled = int(width * ratio)
 	bar = ("#" * filled) + ("-" * (width - filled))
 	return f"[{bar}] {clamped}/{total}"
+
+
+def _hash_payload(payload: dict[str, Any]) -> str:
+	serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+	return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _archive_signature(path: Path) -> dict[str, Any]:
+	stat = path.stat()
+	return {
+		"path": str(path),
+		"size": stat.st_size,
+		"mtime_ns": stat.st_mtime_ns,
+	}
+
+
+def _build_archive_cache_key(
+	archive: DroneRFArchive,
+	max_values_per_archive: int | None,
+	fft_bins: int,
+	include_raw_signal: bool,
+	sample_by_window: bool,
+	window_size: int,
+	window_stride: int,
+) -> str:
+	payload = {
+		"version": _LOADER_CACHE_VERSION,
+		"signature": _archive_signature(archive.path),
+		"code": archive.code,
+		"band": archive.band,
+		"archive_index": archive.archive_index,
+		"max_values_per_archive": max_values_per_archive,
+		"fft_bins": fft_bins,
+		"include_raw_signal": include_raw_signal,
+		"sample_by_window": sample_by_window,
+		"window_size": window_size,
+		"window_stride": window_stride,
+	}
+	return _hash_payload(payload)
+
+
+def _build_dataset_cache_key(
+	archives: Sequence[DroneRFArchive],
+	max_values_per_archive: int | None,
+	fft_bins: int,
+	include_raw_signal: bool,
+	sample_by_window: bool,
+	window_size: int,
+	window_stride: int,
+) -> str:
+	archive_payload = [
+		{
+			"signature": _archive_signature(archive.path),
+			"code": archive.code,
+			"band": archive.band,
+			"archive_index": archive.archive_index,
+		}
+		for archive in archives
+	]
+
+	payload = {
+		"version": _LOADER_CACHE_VERSION,
+		"max_values_per_archive": max_values_per_archive,
+		"fft_bins": fft_bins,
+		"include_raw_signal": include_raw_signal,
+		"sample_by_window": sample_by_window,
+		"window_size": window_size,
+		"window_stride": window_stride,
+		"archives": archive_payload,
+	}
+	return _hash_payload(payload)
+
+
+def _resolve_max_workers(max_workers: int | None, task_count: int) -> int:
+	if task_count <= 1:
+		return 1
+
+	if max_workers is not None and max_workers > 0:
+		return max(1, min(max_workers, task_count))
+
+	cpu_count = os.cpu_count() or 4
+	auto_workers = min(task_count, max(1, min(cpu_count, 4)))
+	return auto_workers
+
+
+def _load_pickle(path: Path) -> Any | None:
+	if not path.exists():
+		return None
+
+	try:
+		with path.open("rb") as handle:
+			return pickle.load(handle)
+	except Exception:
+		return None
+
+
+def _save_pickle(path: Path, payload: Any) -> None:
+	path.parent.mkdir(parents=True, exist_ok=True)
+	temp_path = path.with_suffix(path.suffix + ".tmp")
+
+	with temp_path.open("wb") as handle:
+		pickle.dump(payload, handle)
+
+	temp_path.replace(path)
+
+
+def _process_archive(
+	archive: DroneRFArchive,
+	extract_root: Path,
+	*,
+	extract_archives: bool,
+	force_reextract: bool,
+	max_values_per_archive: int | None,
+	fft_bins: int,
+	include_raw_signal: bool,
+	sample_by_window: bool,
+	window_size: int,
+	window_stride: int,
+	use_cache: bool,
+	refresh_cache: bool,
+	cache_root: Path,
+) -> tuple[list[dict[str, Any]], bool]:
+	archive_cache_path = (
+		cache_root
+		/ "archive_rows"
+		/ f"{_build_archive_cache_key(archive, max_values_per_archive, fft_bins, include_raw_signal, sample_by_window, window_size, window_stride)}.pkl"
+	)
+
+	if use_cache and not refresh_cache:
+		cached_rows = _load_pickle(archive_cache_path)
+		if isinstance(cached_rows, list) and all(isinstance(row, dict) for row in cached_rows):
+			return cached_rows, True
+
+	extraction_folder = (
+		_extract_archive(
+			archive=archive,
+			extract_root=extract_root,
+			force_reextract=force_reextract,
+		)
+		if extract_archives
+		else (
+			extract_root
+			/ f"{archive.code}_{archive.band}{archive.archive_index or 0}_{_sanitize_for_path(archive.path.stem)}"
+		)
+	)
+
+	if not extraction_folder.exists():
+		raise FileNotFoundError(
+			"Extraction folder not found. Either set extract_archives=True or "
+			f"point extract_to to an existing folder. Missing: {extraction_folder}"
+		)
+
+	signal = _read_archive_signal(
+		extraction_folder,
+		max_values_per_archive=max_values_per_archive,
+	)
+
+	feature_rows: list[dict[str, Any]]
+	if sample_by_window:
+		feature_rows = _window_feature_rows(
+			signal=signal,
+			fft_bins=fft_bins,
+			window_size=window_size,
+			window_stride=window_stride,
+		)
+	else:
+		feature_rows = [
+			{
+				"window_index": None,
+				"window_start": 0,
+				"window_length": int(signal.size),
+				**_signal_features(signal=signal, fft_bins=fft_bins),
+			}
+		]
+
+	archive_rows: list[dict[str, Any]] = []
+	for feature_row in feature_rows:
+		archive_row: dict[str, Any] = {
+			"code": archive.code,
+			"band": archive.band,
+			"archive_index": archive.archive_index,
+			"archive_name": archive.path.name,
+			"archive_path": str(archive.path),
+			"source_dir": str(extraction_folder),
+			**feature_row,
+		}
+
+		if include_raw_signal:
+			if sample_by_window:
+				start = int(feature_row["window_start"])
+				length = int(feature_row["window_length"])
+				archive_row["raw_signal"] = signal[start : start + length]
+			else:
+				archive_row["raw_signal"] = signal
+
+		archive_rows.append(archive_row)
+
+	if use_cache:
+		_save_pickle(archive_cache_path, archive_rows)
+
+	return archive_rows, False
 
 
 def _discover_archives(data_root: Path) -> list[DroneRFArchive]:
@@ -253,12 +463,83 @@ def _iter_numeric_files(folder: Path) -> list[Path]:
 	return files
 
 
-def _read_numeric_array(path: Path) -> np.ndarray:
+def _read_text_numeric_array(path: Path, max_values: int | None = None) -> np.ndarray:
+	if max_values is not None and max_values <= 0:
+		return np.array([], dtype=np.float64)
+
+	if max_values is None:
+		text = path.read_text(errors="ignore")
+		values = np.fromstring(text, sep=",", dtype=np.float64)
+		if values.size == 0:
+			values = np.fromstring(text, sep=" ", dtype=np.float64)
+		return values
+
+	target = int(max_values)
+	chunk_size = 1_048_576
+	buffer = ""
+	chunks: list[np.ndarray] = []
+	consumed = 0
+
+	with path.open("r", errors="ignore") as handle:
+		while consumed < target:
+			chunk = handle.read(chunk_size)
+			eof = chunk == ""
+			if not eof:
+				buffer += chunk
+
+			if eof:
+				segment = buffer
+				buffer = ""
+			else:
+				last_delimiter = max(
+					buffer.rfind(","),
+					buffer.rfind("\n"),
+					buffer.rfind("\t"),
+					buffer.rfind(" "),
+				)
+				if last_delimiter <= 0:
+					continue
+				segment = buffer[: last_delimiter + 1]
+				buffer = buffer[last_delimiter + 1 :]
+
+			if not segment:
+				if eof:
+					break
+				continue
+
+			values = np.fromstring(segment, sep=",", dtype=np.float64)
+			if values.size == 0:
+				values = np.fromstring(segment, sep=" ", dtype=np.float64)
+
+			if values.size == 0:
+				if eof:
+					break
+				continue
+
+			remaining = target - consumed
+			if values.size > remaining:
+				values = values[:remaining]
+
+			chunks.append(values)
+			consumed += values.size
+
+			if eof:
+				break
+
+	if not chunks:
+		return np.array([], dtype=np.float64)
+
+	if len(chunks) == 1:
+		return chunks[0]
+	return np.concatenate(chunks)
+
+
+def _read_numeric_array(path: Path, max_values: int | None = None) -> np.ndarray:
 	suffix = path.suffix.lower()
 
 	if suffix == ".npy":
 		array = np.asarray(np.load(path, allow_pickle=False), dtype=np.float64).ravel()
-		return array
+		return array[:max_values] if max_values is not None else array
 
 	if suffix == ".npz":
 		with np.load(path, allow_pickle=False) as archive:
@@ -269,7 +550,8 @@ def _read_numeric_array(path: Path) -> np.ndarray:
 			]
 		if not arrays:
 			return np.array([], dtype=np.float64)
-		return np.concatenate(arrays)
+		joined = np.concatenate(arrays)
+		return joined[:max_values] if max_values is not None else joined
 
 	if suffix == ".mat":
 		try:
@@ -292,10 +574,16 @@ def _read_numeric_array(path: Path) -> np.ndarray:
 
 		if not arrays:
 			return np.array([], dtype=np.float64)
-		return np.concatenate(arrays)
+		joined = np.concatenate(arrays)
+		return joined[:max_values] if max_values is not None else joined
+
+	if suffix in {".csv", ".txt", ".dat", ".tsv", ".log"}:
+		values = _read_text_numeric_array(path, max_values=max_values)
+		if values.size > 0:
+			return values
 
 	try:
-		dataframe = pd.read_csv(path, header=None, engine="python", sep=None)
+		dataframe = pd.read_csv(path, header=None, engine="c")
 		numeric_series = pd.to_numeric(
 			pd.Series(dataframe.to_numpy().ravel()),
 			errors="coerce",
@@ -303,15 +591,20 @@ def _read_numeric_array(path: Path) -> np.ndarray:
 		numeric_values = np.asarray(numeric_series, dtype=np.float64)
 		numeric_values = numeric_values[~np.isnan(numeric_values)]
 		if numeric_values.size > 0:
-			return numeric_values
+			return numeric_values[:max_values] if max_values is not None else numeric_values
 	except Exception:
 		pass
+
+	values = _read_text_numeric_array(path, max_values=max_values)
+	if values.size > 0:
+		return values
 
 	text = path.read_text(errors="ignore")
 	matches = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text)
 	if not matches:
 		return np.array([], dtype=np.float64)
-	return np.asarray([float(value) for value in matches], dtype=np.float64)
+	numeric_values = np.asarray([float(value) for value in matches], dtype=np.float64)
+	return numeric_values[:max_values] if max_values is not None else numeric_values
 
 
 def _read_archive_signal(
@@ -328,15 +621,15 @@ def _read_archive_signal(
 	consumed = 0
 
 	for file_path in numeric_files:
-		values = _read_numeric_array(file_path)
-		if values.size == 0:
-			continue
-
+		remaining = None
 		if max_values_per_archive is not None:
 			remaining = max_values_per_archive - consumed
 			if remaining <= 0:
 				break
-			values = values[:remaining]
+
+		values = _read_numeric_array(file_path, max_values=remaining)
+		if values.size == 0:
+			continue
 
 		chunks.append(values)
 		consumed += values.size
@@ -395,6 +688,56 @@ def _signal_features(signal: np.ndarray, fft_bins: int) -> dict[str, float]:
 	}
 
 
+def _iter_signal_windows(
+	signal: np.ndarray,
+	window_size: int,
+	window_stride: int,
+) -> list[tuple[int, np.ndarray]]:
+	if window_size <= 0:
+		raise ValueError("window_size must be a positive integer")
+	if window_stride <= 0:
+		raise ValueError("window_stride must be a positive integer")
+
+	sample_count = int(signal.size)
+	if sample_count <= window_size:
+		return [(0, signal)]
+
+	last_start = sample_count - window_size
+	windows: list[tuple[int, np.ndarray]] = []
+	start = 0
+
+	while start <= last_start:
+		windows.append((start, signal[start : start + window_size]))
+		start += window_stride
+
+	if windows and windows[-1][0] != last_start:
+		windows.append((last_start, signal[last_start : last_start + window_size]))
+
+	return windows
+
+
+def _window_feature_rows(
+	signal: np.ndarray,
+	fft_bins: int,
+	window_size: int,
+	window_stride: int,
+) -> list[dict[str, Any]]:
+	rows: list[dict[str, Any]] = []
+	for window_index, (start, window_signal) in enumerate(
+		_iter_signal_windows(signal=signal, window_size=window_size, window_stride=window_stride)
+	):
+		rows.append(
+			{
+				"window_index": int(window_index),
+				"window_start": int(start),
+				"window_length": int(window_signal.size),
+				**_signal_features(signal=window_signal, fft_bins=fft_bins),
+			}
+		)
+
+	return rows
+
+
 def _repeat_pairing(
 	high_rows: Sequence[dict[str, Any]],
 	low_rows: Sequence[dict[str, Any]],
@@ -430,14 +773,14 @@ def _pair_high_low_rows(
 
 	for row in high_rows_normalized:
 		index = row["archive_index"]
-		if index is None:
+		if index is None or pd.isna(index):
 			high_unindexed.append(row)
 			continue
 		high_by_index[int(index)].append(row)
 
 	for row in low_rows_normalized:
 		index = row["archive_index"]
-		if index is None:
+		if index is None or pd.isna(index):
 			low_unindexed.append(row)
 			continue
 		low_by_index[int(index)].append(row)
@@ -479,14 +822,18 @@ def _build_pair_dataframe(
 		high_rows = sorted(
 			high_frame.to_dict("records"),
 			key=lambda row: (
-				int(row["archive_index"]) if row["archive_index"] is not None else 10**9,
+				int(row["archive_index"])
+				if row["archive_index"] is not None and not pd.isna(row["archive_index"])
+				else 10**9,
 				str(row["archive_name"]),
 			),
 		)
 		low_rows = sorted(
 			low_frame.to_dict("records"),
 			key=lambda row: (
-				int(row["archive_index"]) if row["archive_index"] is not None else 10**9,
+				int(row["archive_index"])
+				if row["archive_index"] is not None and not pd.isna(row["archive_index"])
+				else 10**9,
 				str(row["archive_name"]),
 			),
 		)
@@ -517,6 +864,10 @@ def _build_pair_dataframe(
 				"l_archive_path": low_row["archive_path"],
 				"h_source_dir": high_row["source_dir"],
 				"l_source_dir": low_row["source_dir"],
+				"h_window_index": high_row.get("window_index"),
+				"l_window_index": low_row.get("window_index"),
+				"h_window_start": high_row.get("window_start"),
+				"l_window_start": low_row.get("window_start"),
 			}
 
 			for feature_name in _BASE_FEATURE_COLUMNS:
@@ -547,7 +898,14 @@ def load_dronerf_dataframe(
 	force_reextract: bool = False,
 	max_values_per_archive: int | None = 200_000,
 	fft_bins: int = 2048,
+	sample_by_window: bool = False,
+	window_size: int = 4096,
+	window_stride: int | None = None,
 	show_progress: bool = True,
+	use_cache: bool = True,
+	refresh_cache: bool = False,
+	cache_dir: str | Path | None = None,
+	max_workers: int | None = None,
 	include_raw_signal: bool = False,
 ) -> pd.DataFrame:
 	"""
@@ -555,7 +913,8 @@ def load_dronerf_dataframe(
 
 	The loader extracts each .rar archive (if needed), reads numeric signal files,
 	computes compact statistical + FFT features per archive, then pairs H/L bands
-	into one row per sample.
+	into one row per sample. Optional disk cache and parallel workers speed up
+	repeated runs significantly.
 	"""
 
 	data_root_path = Path(data_root) if data_root is not None else _default_data_root()
@@ -571,6 +930,14 @@ def load_dronerf_dataframe(
 	)
 	extract_root.mkdir(parents=True, exist_ok=True)
 
+	cache_root = (
+		Path(cache_dir).resolve()
+		if cache_dir is not None
+		else (data_root_path / "_cache").resolve()
+	)
+	if use_cache:
+		cache_root.mkdir(parents=True, exist_ok=True)
+
 	archives = _discover_archives(data_root_path)
 	if not archives:
 		raise FileNotFoundError(
@@ -578,70 +945,167 @@ def load_dronerf_dataframe(
 			"Expected files named like 'RF Data_10000_H.rar'."
 		)
 
+	if window_size <= 0:
+		raise ValueError("window_size must be a positive integer")
+
+	effective_window_stride = window_size if window_stride is None else int(window_stride)
+	if effective_window_stride <= 0:
+		raise ValueError("window_stride must be a positive integer")
+
 	total_archives = len(archives)
+
+	dataset_cache_key = _build_dataset_cache_key(
+		archives=archives,
+		max_values_per_archive=max_values_per_archive,
+		fft_bins=fft_bins,
+		include_raw_signal=include_raw_signal,
+		sample_by_window=sample_by_window,
+		window_size=window_size,
+		window_stride=effective_window_stride,
+	)
+	dataset_cache_path = cache_root / "dataframes" / f"{dataset_cache_key}.pkl"
+
+	if use_cache and not refresh_cache:
+		cached_dataframe = _DATAFRAME_MEMORY_CACHE.get(dataset_cache_key)
+		if cached_dataframe is not None:
+			if show_progress:
+				print("Dataset cache hit (memory)", file=sys.stderr, flush=True)
+			return cached_dataframe.copy(deep=True)
+
+		cached_dataframe = _load_pickle(dataset_cache_path)
+		if isinstance(cached_dataframe, pd.DataFrame):
+			_DATAFRAME_MEMORY_CACHE[dataset_cache_key] = cached_dataframe
+			if show_progress:
+				print(
+					f"Dataset cache hit (disk): {dataset_cache_path}",
+					file=sys.stderr,
+					flush=True,
+				)
+			return cached_dataframe.copy(deep=True)
+
+	selected_workers = _resolve_max_workers(max_workers=max_workers, task_count=total_archives)
+
 	if show_progress:
+		cache_mode = "enabled" if use_cache else "disabled"
+		sample_mode = (
+			f"windowed(size={window_size}, stride={effective_window_stride})"
+			if sample_by_window
+			else "archive"
+		)
 		print(
-			f"Preparing DroneRF dataset from {total_archives} archives",
+			f"Preparing DroneRF dataset from {total_archives} archives "
+			f"(workers={selected_workers}, cache={cache_mode}, sample_mode={sample_mode})",
 			file=sys.stderr,
+			flush=True,
 		)
 
-	archive_rows: list[dict[str, Any]] = []
-	for archive_index, archive in enumerate(archives, start=1):
-		if show_progress:
-			progress = _render_progress_bar(archive_index, total_archives)
-			print(
-				f"{progress} Loading {archive.path.name}",
-				file=sys.stderr,
-			)
+	archive_rows_by_index: dict[int, list[dict[str, Any]]] = {}
+	cache_hits = 0
+	cache_misses = 0
 
-		extraction_folder = (
-			_extract_archive(
+	if selected_workers == 1:
+		for archive_index, archive in enumerate(archives, start=1):
+			archive_rows, was_cached = _process_archive(
 				archive=archive,
 				extract_root=extract_root,
+				extract_archives=extract_archives,
 				force_reextract=force_reextract,
+				max_values_per_archive=max_values_per_archive,
+				fft_bins=fft_bins,
+				include_raw_signal=include_raw_signal,
+				sample_by_window=sample_by_window,
+				window_size=window_size,
+				window_stride=effective_window_stride,
+				use_cache=use_cache,
+				refresh_cache=refresh_cache,
+				cache_root=cache_root,
 			)
-			if extract_archives
-			else (
-				extract_root
-				/ f"{archive.code}_{archive.band}{archive.archive_index or 0}_{_sanitize_for_path(archive.path.stem)}"
-			)
+
+			archive_rows_by_index[archive_index] = archive_rows
+			if was_cached:
+				cache_hits += 1
+			else:
+				cache_misses += 1
+
+			if show_progress:
+				progress = _render_progress_bar(archive_index, total_archives)
+				state = "cache" if was_cached else "computed"
+				print(
+					f"{progress} {archive.path.name} ({state})",
+					file=sys.stderr,
+					flush=True,
+				)
+	else:
+		archive_lookup = {index: archive for index, archive in enumerate(archives, start=1)}
+
+		with ThreadPoolExecutor(max_workers=selected_workers) as executor:
+			future_to_index = {
+				executor.submit(
+					_process_archive,
+					archive,
+					extract_root,
+					extract_archives=extract_archives,
+					force_reextract=force_reextract,
+					max_values_per_archive=max_values_per_archive,
+					fft_bins=fft_bins,
+					include_raw_signal=include_raw_signal,
+					sample_by_window=sample_by_window,
+					window_size=window_size,
+					window_stride=effective_window_stride,
+					use_cache=use_cache,
+					refresh_cache=refresh_cache,
+					cache_root=cache_root,
+				): index
+				for index, archive in archive_lookup.items()
+			}
+
+			completed = 0
+			for future in as_completed(future_to_index):
+				archive_index = future_to_index[future]
+				archive_rows, was_cached = future.result()
+				archive_rows_by_index[archive_index] = archive_rows
+
+				completed += 1
+				if was_cached:
+					cache_hits += 1
+				else:
+					cache_misses += 1
+
+				if show_progress:
+					progress = _render_progress_bar(completed, total_archives)
+					archive_name = archive_lookup[archive_index].path.name
+					state = "cache" if was_cached else "computed"
+					print(
+						f"{progress} {archive_name} ({state})",
+						file=sys.stderr,
+						flush=True,
+					)
+
+	if show_progress:
+		print(
+			f"Archive stage finished: cache_hits={cache_hits}, computed={cache_misses}",
+			file=sys.stderr,
+			flush=True,
 		)
 
-		if not extraction_folder.exists():
-			raise FileNotFoundError(
-				"Extraction folder not found. Either set extract_archives=True or "
-				f"point extract_to to an existing folder. Missing: {extraction_folder}"
-			)
-
-		signal = _read_archive_signal(
-			extraction_folder,
-			max_values_per_archive=max_values_per_archive,
-		)
-		feature_map = _signal_features(signal=signal, fft_bins=fft_bins)
-
-		archive_row: dict[str, Any] = {
-			"code": archive.code,
-			"band": archive.band,
-			"archive_index": archive.archive_index,
-			"archive_name": archive.path.name,
-			"archive_path": str(archive.path),
-			"source_dir": str(extraction_folder),
-			**feature_map,
-		}
-
-		if include_raw_signal:
-			archive_row["raw_signal"] = signal
-
-		archive_rows.append(archive_row)
-
+	archive_rows_nested = [archive_rows_by_index[index] for index in sorted(archive_rows_by_index)]
+	archive_rows = [row for rows in archive_rows_nested for row in rows]
 	archive_dataframe = pd.DataFrame(archive_rows)
 	if archive_dataframe.empty:
 		raise ValueError("No archive rows were generated from DroneRF input files")
 
-	return _build_pair_dataframe(
+	pair_dataframe = _build_pair_dataframe(
 		archive_dataframe=archive_dataframe,
 		include_raw_signal=include_raw_signal,
 	)
+
+	if use_cache:
+		_save_pickle(dataset_cache_path, pair_dataframe)
+		_DATAFRAME_MEMORY_CACHE[dataset_cache_key] = pair_dataframe.copy(deep=True)
+		if show_progress:
+			print(f"Saved dataset cache: {dataset_cache_path}", file=sys.stderr, flush=True)
+
+	return pair_dataframe
 
 
 def default_feature_columns(dataframe: pd.DataFrame) -> list[str]:
@@ -707,11 +1171,47 @@ def dataframe_to_numpy(
 			"scikit-learn is required for splitting. Install with `pip install scikit-learn`."
 		) from exc
 
+	effective_test_size = float(test_size)
 	stratify_values = y if stratify and np.unique(y).size > 1 else None
+
+	if stratify_values is not None:
+		class_count = int(np.unique(y).size)
+		sample_count = int(y.size)
+
+		# sklearn stratified split needs enough examples for each class on both sides.
+		if sample_count < (2 * class_count):
+			warnings.warn(
+				"Stratified split disabled: not enough samples to place every class in "
+				"both train and test sets. Falling back to non-stratified split.",
+				RuntimeWarning,
+			)
+			stratify_values = None
+		else:
+			min_test_fraction = class_count / sample_count
+			max_test_fraction = 1.0 - min_test_fraction
+
+			if effective_test_size < min_test_fraction:
+				warnings.warn(
+					"Adjusted test_size from "
+					f"{effective_test_size:.4f} to {min_test_fraction:.4f} "
+					"to satisfy stratified split class coverage.",
+					RuntimeWarning,
+				)
+				effective_test_size = min_test_fraction
+
+			if effective_test_size > max_test_fraction:
+				warnings.warn(
+					"Adjusted test_size from "
+					f"{effective_test_size:.4f} to {max_test_fraction:.4f} "
+					"to keep stratified split feasible.",
+					RuntimeWarning,
+				)
+				effective_test_size = max_test_fraction
+
 	X_train, X_test, y_train, y_test = train_test_split(
 		X,
 		y,
-		test_size=test_size,
+		test_size=effective_test_size,
 		random_state=random_state,
 		stratify=stratify_values,
 	)

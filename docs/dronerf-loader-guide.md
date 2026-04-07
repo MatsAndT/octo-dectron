@@ -36,6 +36,14 @@ df = load_dronerf_dataframe(
     force_reextract=False,
     max_values_per_archive=200_000,
     fft_bins=2048,
+    sample_by_window=False,
+    window_size=4096,
+    window_stride=None,            # defaults to window_size
+    use_cache=True,
+    refresh_cache=False,
+    cache_dir=None,                # defaults to data/DroneRF/_cache
+    max_workers=None,              # auto worker count
+    show_progress=True,
     include_raw_signal=False,
 )
 ```
@@ -48,7 +56,39 @@ df = load_dronerf_dataframe(
 - `force_reextract`: re-extract even if extracted folders already exist.
 - `max_values_per_archive`: cap signal values per archive (memory/speed control).
 - `fft_bins`: FFT bins used for spectral features.
+- `sample_by_window`: when `True`, generate multiple feature rows per archive via sliding windows.
+- `window_size`: number of samples per window when `sample_by_window=True`.
+- `window_stride`: step between windows (defaults to `window_size`).
+- `use_cache`: enable dataset and per-archive disk cache.
+- `refresh_cache`: force cache rebuild for current run.
+- `cache_dir`: custom cache folder path.
+- `max_workers`: parallel worker count (`None` = automatic).
+- `show_progress`: print progress and cache hit/miss stats.
 - `include_raw_signal`: attach raw signal arrays in output DataFrame.
+
+## Cache and Parallel Speedups
+
+The loader now uses two cache layers when `use_cache=True`:
+
+1. Per-archive feature cache (skips re-parsing/re-FFT for unchanged archives)
+2. Full DataFrame cache (returns precomputed dataset quickly)
+
+Parallel processing is enabled through `max_workers`.
+
+- `max_workers=None` uses automatic worker count.
+- `max_workers=1` forces sequential processing.
+
+Fast repeat-load example:
+
+```python
+df = load_dronerf_dataframe(use_cache=True, max_workers=None)
+```
+
+Force refresh example:
+
+```python
+df = load_dronerf_dataframe(refresh_cache=True, max_workers=1)
+```
 
 ## Output DataFrame structure
 

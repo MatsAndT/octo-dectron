@@ -9,4 +9,18 @@ dependencies = [
     "pandas>=2.2",
     "rarfile>=4.2",
     "scikit-learn>=1.4",
+    "torch>=2.11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+markers = [
+    "integration: optional tests that exercise real DroneRF data",
 ]

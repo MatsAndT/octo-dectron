@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import re
 import shutil
 import subprocess
@@ -137,6 +138,17 @@ def _parse_archive_name(path: Path) -> DroneRFArchive | None:
 		archive_index=archive_index,
 		path=path,
 	)
+
+
+def _render_progress_bar(current: int, total: int, width: int = 32) -> str:
+	if total <= 0:
+		return "[" + ("-" * width) + "] 0/0"
+
+	clamped = max(0, min(current, total))
+	ratio = clamped / total
+	filled = int(width * ratio)
+	bar = ("#" * filled) + ("-" * (width - filled))
+	return f"[{bar}] {clamped}/{total}"
 
 
 def _discover_archives(data_root: Path) -> list[DroneRFArchive]:
@@ -535,6 +547,7 @@ def load_dronerf_dataframe(
 	force_reextract: bool = False,
 	max_values_per_archive: int | None = 200_000,
 	fft_bins: int = 2048,
+	show_progress: bool = True,
 	include_raw_signal: bool = False,
 ) -> pd.DataFrame:
 	"""
@@ -565,8 +578,22 @@ def load_dronerf_dataframe(
 			"Expected files named like 'RF Data_10000_H.rar'."
 		)
 
+	total_archives = len(archives)
+	if show_progress:
+		print(
+			f"Preparing DroneRF dataset from {total_archives} archives",
+			file=sys.stderr,
+		)
+
 	archive_rows: list[dict[str, Any]] = []
-	for archive in archives:
+	for archive_index, archive in enumerate(archives, start=1):
+		if show_progress:
+			progress = _render_progress_bar(archive_index, total_archives)
+			print(
+				f"{progress} Loading {archive.path.name}",
+				file=sys.stderr,
+			)
+
 		extraction_folder = (
 			_extract_archive(
 				archive=archive,

@@ -4,45 +4,41 @@ import csv
 import numpy as np
 from glob import glob
 
-# ----------------------------
-# CONFIG
-# ----------------------------
+# Grunnleggende innstillinger for data-prosessering
 CACHE_PATH = "cache/dronerf_dataset.npz"
 FFT_SIZE = 4096
 
 
-# ----------------------------
-# FILE PARSING
-# ----------------------------
+# Tolker filnavn etter formatet: MODELKODE + LABEL + BÅND + SEGMENT
+# Eksempel: "12345L_001.csv" → prefix="123", label="45", band="L", seg="001"
 def parse_filename(name):
     m = re.match(r"(\d+)([LH])_(\d+)\.csv", name)
     if not m:
         return None
     full_code, band, seg = m.groups()
-    mode = full_code[-2:]
-    return mode, band, seg
+    model_prefix = full_code[:-2]
+    label_code = full_code[-2:]
+    if model_prefix == "000":
+        label_code = "000"
+    return model_prefix, label_code, band, seg
 
 
-# ----------------------------
-# LOAD SIGNAL
-# ----------------------------
+# Leser signaldata fra CSV-fil (første rad) og konverterer til numpy array
 def load_signal(path):
     with open(path, newline="", encoding="utf-8") as f:
         row = next(csv.reader(f))
     return np.array(row, dtype=np.float32)
 
 
-# ----------------------------
-# FFT
-# ----------------------------
+# Beregner FFT-spektrum: bruker Hanning-vindu for å redusere kanteffekter
 def fft(x):
     x = x * np.hanning(len(x))
     return np.abs(np.fft.rfft(x, n=FFT_SIZE))
 
 
-# ----------------------------
-# BUILD FILE INDEX
-# ----------------------------
+# Organiserer alle CSV-filer i en struktur hvor hver sample har både L- og H-bånd.
+# Grupper filer etter model/label/segment, kartlegger labels til indekser,
+# og returnerer liste med samples som har begge bånd + en mapping for labels.
 def build_index(data_dir):
     files = glob(os.path.join(data_dir, "**", "*.csv"), recursive=True)
 
@@ -52,28 +48,29 @@ def build_index(data_dir):
         if not parsed:
             continue
 
-        mode, band, seg = parsed
-        grouped.setdefault((mode, seg), {})[band] = f
+        model_prefix, label_code, band, seg = parsed
+        grouped.setdefault((model_prefix, label_code, seg), {})[band] = f
 
     samples = []
-    modes = sorted({k[0] for k in grouped})
-    mode_map = {m: i for i, m in enumerate(modes)}
+    label_codes = sorted({key[1] for key in grouped})
+    label_map = {label_code: i for i, label_code in enumerate(label_codes)}
 
-    for (mode, seg), bands in grouped.items():
+    for (model_prefix, label_code, seg), bands in sorted(grouped.items()):
         if "L" in bands and "H" in bands:
-            samples.append((mode_map[mode], bands["L"], bands["H"]))
+            samples.append((label_map[label_code], bands["L"], bands["H"]))
 
-    return samples, mode_map
+    return samples, label_map
 
 
-# ----------------------------
-# FEATURE EXTRACTOR
-# ----------------------------
+# Finner de k største toppene i spekteret (frekvenser med høyest magnitude)
 def spectral_peaks(x, k=5):
     idx = np.argpartition(x, -k)[-k:]
     idx = idx[np.argsort(x[idx])[::-1]]
-    return x[idx], idx  # return the k largest peaks magnitudes and their frequencies
+    return x[idx], idx  # returnerer magnitude og frekvensindekser for de k største toppene
 
+# Trekker ut trekk fra L- og H-bånd avhengig av modelltype:
+# - CNN: bruker hele spekteret som 1D feature
+# - MLP: trekker ut topper + statistikk (min/gjennomsnitt/std/max) fra hvert bånd
 def extract_features(L, H, mode="mlp"):
     fL = fft(L)
     fH = fft(H)
@@ -96,9 +93,8 @@ def extract_features(L, H, mode="mlp"):
     raise ValueError("mode must be 'cnn' or 'mlp'")
 
 
-# ----------------------------
-# BUILD DATASET (NO PYTORCH)
-# ----------------------------
+# Bygger dataset ved å lese inn hver sample og konvertere dem til features
+# Hver sample består av et L- og H-bånd, som eventuelt blir trimmet til samme lengde.
 def build_dataset(data_dir, mode="mlp"):
     samples, mode_map = build_index(data_dir)
 
@@ -118,9 +114,8 @@ def build_dataset(data_dir, mode="mlp"):
     return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64), mode_map
 
 
-# ----------------------------
-# CACHE HANDLING
-# ----------------------------
+# Laster data fra cache hvis mulig, ellers bygger dataset fra CSV-filene
+# Cache brukes for å slippe å regenerere features på nytt hver gang.
 def load_or_build(data_dir, mode="mlp", use_cache=True):
     import os
     import numpy as np
@@ -169,9 +164,7 @@ def load_or_build(data_dir, mode="mlp", use_cache=True):
     return X, y, {v: k for k, v in mode_map.items()}, feature_names
 
 
-# ----------------------------
-# FEATURE NAMES (optional helper)
-# ----------------------------
+# Hjelpefunksjon som gir navn til MLP-trekkene, nyttig for tolkning og debugging
 def get_feature_names(mode="mlp"):
     if mode == "cnn":
         return None
@@ -187,11 +180,9 @@ def get_feature_names(mode="mlp"):
     ]
 
 
-# ----------------------------
-# MAIN TEST
-# ----------------------------
+# Enkel test av funksjonaliteten: leser dataset og skriver ut form og labels
 if __name__ == "__main__":
-    data_dir = "DroneRF"
+    data_dir = ".DroneRF"
 
     X, y, label_map, feature_names = load_or_build(data_dir, mode="mlp")
 

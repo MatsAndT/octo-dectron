@@ -42,14 +42,14 @@ def print_dataset_info(X, y, label_map=None, feature_names=None):
     print(df.describe().T.sort_values("std", ascending=False))
 
     print(df.columns)
-    sns.pairplot(df, hue="label")
-    plt.show()
+    #sns.pairplot(df, hue="label")
+    #plt.show()
 
 
 
 if __name__ == "__main__":
 
-    data_dir = "AR drone"
+    data_dir = ".DroneRF"
 
     X, y, mode_map, feature_names = load_or_build(data_dir, mode="mlp")
 

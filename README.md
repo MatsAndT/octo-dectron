@@ -44,3 +44,17 @@ Install optional PyTorch support manually:
 ```bash
 pip install torch
 ```
+
+## CNN Multitask Trainer
+
+Train one CNN model that predicts both drone family and drone mode from raw H/L DroneRF signals.
+
+Quick run:
+
+```bash
+uv run python cnn.py --epochs 3 --batch-size 16 --max-values-per-archive 50000 --device auto --auto-test
+```
+
+Full guide:
+
+- [docs/cnn-trainer-guide.md](docs/cnn-trainer-guide.md)

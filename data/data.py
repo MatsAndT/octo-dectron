@@ -100,7 +100,7 @@ _NUMERIC_FILE_EXTENSIONS = {
 	".mat",
 }
 
-_LOADER_CACHE_VERSION = "v2"
+_LOADER_CACHE_VERSION = "v3"
 _DATAFRAME_MEMORY_CACHE: dict[str, pd.DataFrame] = {}
 
 
@@ -314,6 +314,8 @@ def _process_archive(
 		extraction_folder,
 		max_values_per_archive=max_values_per_archive,
 	)
+
+	signal = _to_frequency_domain(signal)
 
 	feature_rows: list[dict[str, Any]]
 	if sample_by_window:
@@ -644,6 +646,15 @@ def _read_archive_signal(
 	return np.concatenate(chunks)
 
 
+def _to_frequency_domain(signal: np.ndarray) -> np.ndarray:
+	if signal.size == 0:
+		return signal
+
+	# Use magnitude spectrum as the real-valued frequency-domain signal.
+	spectrum = np.fft.rfft(signal)
+	return np.abs(spectrum).astype(np.float64, copy=False)
+
+
 def _signal_features(signal: np.ndarray, fft_bins: int) -> dict[str, float]:
 	if signal.size == 0:
 		raise ValueError("Cannot compute features from an empty signal")
@@ -654,8 +665,14 @@ def _signal_features(signal: np.ndarray, fft_bins: int) -> dict[str, float]:
 	rms = float(np.sqrt(np.mean(np.square(signal))))
 	energy = float(np.mean(np.square(signal)))
 
-	fft_values = np.fft.rfft(signal, n=fft_bins)
-	power = np.square(np.abs(fft_values))
+	spectrum = signal
+	if fft_bins > 0:
+		if spectrum.size > fft_bins:
+			spectrum = spectrum[:fft_bins]
+		elif spectrum.size < fft_bins:
+			spectrum = np.pad(spectrum, (0, fft_bins - spectrum.size))
+
+	power = np.square(spectrum)
 	power_sum = float(np.sum(power))
 
 	if power_sum > 0.0:
@@ -912,6 +929,7 @@ def load_dronerf_dataframe(
 	Load DroneRF data into a training-ready pandas DataFrame.
 
 	The loader extracts each .rar archive (if needed), reads numeric signal files,
+	converts them to frequency-domain magnitude via FFT, and
 	computes compact statistical + FFT features per archive, then pairs H/L bands
 	into one row per sample. Optional disk cache and parallel workers speed up
 	repeated runs significantly.

@@ -58,3 +58,23 @@ uv run python cnn.py --epochs 3 --batch-size 16 --max-values-per-archive 50000 -
 Full guide:
 
 - [docs/cnn-trainer-guide.md](docs/cnn-trainer-guide.md)
+
+## Model Performance Visualization
+
+Use the visualization script to view CNN/MLP accuracy, macro F1, loss, train vs test comparisons, and confusion matrices.
+
+Run with defaults (family + mode, include test metrics):
+
+```bash
+uv run Visualization/model_performance.py
+```
+
+Common options:
+
+```bash
+# Only family target
+uv run Visualization/model_performance.py --targets family
+
+# Skip test metrics and confusion matrices
+uv run Visualization/model_performance.py --no-test --no-confusion
+```

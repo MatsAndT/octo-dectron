@@ -32,19 +32,19 @@ uv sync
 Run 4-class drone family classification:
 
 ```bash
-python mlp.py --target family --epochs 30 --batch-size 32
+uv run mlp.py --target family --epochs 30 --batch-size 32
 ```
 
 Run binary detection (background vs drone):
 
 ```bash
-python mlp.py --target binary --epochs 30
+uv run mlp.py --target binary --epochs 30
 ```
 
 Run 10-class mode classification:
 
 ```bash
-python mlp.py --target mode --epochs 40
+uv run mlp.py --target mode --epochs 40
 ```
 
 ## Mac M4 Device Support (MPS)
@@ -60,11 +60,11 @@ The trainer supports Apple Silicon acceleration.
 Examples:
 
 ```bash
-python mlp.py --device auto
+uv run mlp.py --device auto
 ```
 
 ```bash
-python mlp.py --device mps
+uv run mlp.py --device mps
 ```
 
 ## Main Arguments
@@ -136,49 +136,49 @@ When `--auto-test` is enabled, the trainer additionally writes:
 Fast smoke test:
 
 ```bash
-python mlp.py --target family --epochs 3 --batch-size 16 --max-values-per-archive 50000
+uv run mlp.py --target family --epochs 3 --batch-size 16 --max-values-per-archive 50000
 ```
 
 Run with progress bar enabled explicitly:
 
 ```bash
-python mlp.py --show-loading-progress
+uv run mlp.py --show-loading-progress
 ```
 
 Better baseline run:
 
 ```bash
-python mlp.py --target family --epochs 50 --batch-size 32 --device auto
+uv run mlp.py --target family --epochs 50 --batch-size 32 --device auto
 ```
 
 Baseline run with explicit post-training auto-test:
 
 ```bash
-python mlp.py --target family --epochs 50 --batch-size 32 --device auto --auto-test
+uv run mlp.py --target family --epochs 50 --batch-size 32 --device auto --auto-test
 ```
 
 Mode task with class weighting:
 
 ```bash
-python mlp.py --target mode --epochs 60 --use-class-weights --device auto
+uv run mlp.py --target mode --epochs 60 --use-class-weights --device auto
 ```
 
 Mode task with window features (recommended for real training):
 
 ```bash
-python mlp.py --target mode --window-features --window-size 4096 --window-stride 2048 --epochs 80 --use-class-weights --device auto
+uv run mlp.py --target mode --window-features --window-size 4096 --window-stride 2048 --epochs 80 --use-class-weights --device auto
 ```
 
 Warm-cache repeated experiments:
 
 ```bash
-python mlp.py --target family --use-loader-cache --loader-max-workers 0
+uv run mlp.py --target family --use-loader-cache --loader-max-workers 0
 ```
 
 Force a fresh loader rebuild:
 
 ```bash
-python mlp.py --refresh-loader-cache --loader-max-workers 1
+uv run mlp.py --refresh-loader-cache --loader-max-workers 1
 ```
 
 ## Notes on Class Imbalance

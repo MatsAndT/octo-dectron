@@ -59,7 +59,7 @@ def run_mlp_kitchen_sink(X, y):
 
     # Standard oppsett: ingen regularisering, standard lag
     pipe = Pipeline([
-        ("scaler", MinMaxScaler()), 
+        ("scaler", StandardScaler()), 
         ("mlp", MLPClassifier(
             hidden_layer_sizes=(100, 100), # Stor kapasitet
             alpha=0,                      # Ingen brems (ingen L2-straff)
@@ -95,27 +95,35 @@ def run_mlp_pipeline(X, y, feature_names):
         ("mlp", MLPClassifier(
             activation="relu",
             solver="adam",
-            max_iter=8000,
-            learning_rate="adaptive",
+            max_iter=5000,
+            
+            # --- Early Stopping Parametere ---
+            early_stopping=True,      # Denne var med da det gikk bra
+            validation_fraction=0.15,  # Bruker 20% av trening til å sjekke når den skal stoppe
+            n_iter_no_change=75,      # Gir den 50 runder på å forbedre seg før den stopper
+            
+            # --- Læringskontroll ---
+            learning_rate="adaptive", 
             random_state=42
         ))
     ])
 
     param_grid = {
-        # Prøver ulike arkitekturer, fra veldig enkle til moderat komplekse
-        "mlp__hidden_layer_sizes": [
-            (32, 32, 32), (64,),
-            (16, 16, 16),
-        ],
-        
-        
-        # Regularisering (L2-straff): Dette er den viktigste bremsen mot overfitting
-        "mlp__alpha": [0.001, 0.5, 1.0],
-        
-        # Læringsrate: Vi holder den lav for å sikre stabil konvergens
-        "mlp__learning_rate_init": [0.001, 0.0005],
-        
-    }
+    # Vi vet at (16, 16) fungerer, så vi tester litt større varianter av "små" lag
+    "mlp__hidden_layer_sizes": [
+        (16, 16), 
+        (32, 16), 
+        (32, 32),
+        (24, 24)
+    ],
+    
+    # Siden 0.1 i alpha fungerte bra for å hindre overfitting, 
+    # tester vi verdier rett rundt der
+    "mlp__alpha": [0.05, 0.1, 0.2, 0.5],
+    
+    # Vi holder oss til 0.001, men legger til 0.005 for å se om raskere læring hjelper
+    "mlp__learning_rate_init": [0.001, 0.005]
+}
 
     grid = GridSearchCV(
         pipe,
@@ -142,6 +150,16 @@ def run_mlp_pipeline(X, y, feature_names):
     
     print("\nCLASSIFICATION REPORT (TEST):")
     print(classification_report(y_test, y_test_pred, zero_division=0))
+
+    disp = ConfusionMatrixDisplay.from_predictions(
+        y_test,
+        y_test_pred,
+        cmap="Blues",
+        normalize=None
+    )
+    disp.ax_.set_title("Test-set Confusion Matrix")
+    plt.tight_layout()
+    plt.show()
 
     dummy = DummyClassifier(strategy="most_frequent")
     dummy.fit(X_train_filtered, y_train)

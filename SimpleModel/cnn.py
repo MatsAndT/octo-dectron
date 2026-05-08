@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-from tensorflow.keras import layers, models
+from tensorflow.keras import layers, models, regularizers
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, ConfusionMatrixDisplay
 from sklearn.utils.class_weight import compute_class_weight
@@ -11,34 +11,39 @@ from load_data import load_or_build, MAX_WINDOWS, N_BANDS
 
 
 def build_model(input_shape, num_classes):
-    """1-D CNN over time-windows; each step has N_BANDS*2 frequency features."""
+    """Small regularised 1-D CNN.
+
+    With only ~180 training files a large model overfits immediately.
+    ~15k parameters + L2 + Dropout + GaussianNoise keeps it in check.
+    """
+    l2 = regularizers.L2(0.005)
+
     model = models.Sequential([
         layers.Input(shape=input_shape),           # (MAX_WINDOWS, N_BANDS*2)
 
-        layers.Conv1D(64, 5, activation="relu", padding="same"),
-        layers.BatchNormalization(),
-        layers.MaxPooling1D(2),
+        # Built-in training-time noise augmentation
+        layers.GaussianNoise(0.05),
 
-        layers.Conv1D(128, 5, activation="relu", padding="same"),
+        layers.Conv1D(16, 7, activation="relu", padding="same", kernel_regularizer=l2),
         layers.BatchNormalization(),
-        layers.MaxPooling1D(2),
+        layers.MaxPooling1D(4),
+        layers.Dropout(0.4),
 
-        layers.Conv1D(256, 3, activation="relu", padding="same"),
+        layers.Conv1D(32, 5, activation="relu", padding="same", kernel_regularizer=l2),
         layers.BatchNormalization(),
-        layers.MaxPooling1D(2),
+        layers.MaxPooling1D(4),
+        layers.Dropout(0.4),
 
         layers.GlobalAveragePooling1D(),
 
-        layers.Dense(128, activation="relu"),
-        layers.Dropout(0.3),
-        layers.Dense(64, activation="relu"),
-        layers.Dropout(0.2),
+        layers.Dense(32, activation="relu", kernel_regularizer=l2),
+        layers.Dropout(0.5),
 
         layers.Dense(num_classes, activation="softmax"),
     ])
 
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
@@ -50,7 +55,7 @@ def main():
     data_dir = ".DroneRF"
     X, y, label_map, _ = load_or_build(data_dir, mode="cnn")
 
-    print("Shape:", X.shape)          # expected: (n_files, MAX_WINDOWS, N_BANDS*2)
+    print("Shape:", X.shape)          # (n_files, MAX_WINDOWS, N_BANDS*2)
     print("Unique labels:", np.unique(y))
     print("Class distribution:", np.bincount(y))
 
@@ -63,7 +68,7 @@ def main():
         stratify=y,
     )
 
-    # Per-sample max normalisation (keeps relative frequency structure intact)
+    # Per-sample max normalisation
     def normalise(arr):
         m = np.max(np.abs(arr), axis=(1, 2), keepdims=True)
         m = np.where(m == 0, 1.0, m)
@@ -72,7 +77,6 @@ def main():
     X_train = normalise(X_train)
     X_test  = normalise(X_test)
 
-    # input_shape = (MAX_WINDOWS, N_BANDS * 2)
     input_shape = (X_train.shape[1], X_train.shape[2])
     print("Input shape per sample:", input_shape)
 
@@ -89,37 +93,19 @@ def main():
 
     early_stop = tf.keras.callbacks.EarlyStopping(
         monitor="val_loss",
-        patience=15,
+        patience=20,
         restore_best_weights=True,
     )
 
-    def data_generator(X, y, cw, batch_size=32):
-        while True:
-            idx = np.random.randint(0, len(X), batch_size)
-            batch_x = X[idx].copy()
-            batch_y = y[idx]
-
-            # Light augmentation: Gaussian noise + temporal shift
-            batch_x += np.random.normal(0, 0.01, batch_x.shape)
-            shift = np.random.randint(-10, 10)
-            batch_x = np.roll(batch_x, shift, axis=1)
-
-            sample_weights = np.array([cw[label] for label in batch_y])
-            yield batch_x, batch_y, sample_weights
-
     print("\n--- TRAINING ---")
     history = model.fit(
-        data_generator(X_train, y_train, class_weights),
-        steps_per_epoch=len(X_train) // 32,
-        epochs=100,
+        X_train, y_train,
+        batch_size=16,
+        epochs=200,
         validation_data=(X_test, y_test),
+        class_weight=class_weights,
         callbacks=[early_stop],
     )
-
-    print("\n--- SANITY CHECK ---")
-    model.fit(X_train[:50], y_train[:50], epochs=50, verbose=0)
-    train_acc = model.evaluate(X_train[:50], y_train[:50], verbose=0)[1]
-    print(f"Overfit test accuracy (should be ~1.0): {train_acc:.3f}")
 
     print("\n--- TEST ---")
     test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
@@ -129,6 +115,20 @@ def main():
 
     print("\n--- REPORT ---")
     print(classification_report(y_test, y_pred, zero_division=0))
+
+    # Learning curves
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    axes[0].plot(history.history["loss"], label="train")
+    axes[0].plot(history.history["val_loss"], label="val")
+    axes[0].set_title("Loss")
+    axes[0].legend()
+    axes[1].plot(history.history["accuracy"], label="train")
+    axes[1].plot(history.history["val_accuracy"], label="val")
+    axes[1].set_title("Accuracy")
+    axes[1].legend()
+    plt.tight_layout()
+    plt.savefig("learning_curves.png")
+    plt.show()
 
     disp = ConfusionMatrixDisplay.from_predictions(y_test, y_pred, cmap="Blues")
     disp.ax_.set_title("Confusion Matrix")

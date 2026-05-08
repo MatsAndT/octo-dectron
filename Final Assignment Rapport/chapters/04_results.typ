@@ -2,51 +2,35 @@
 
 == MLP
 
-Eksperimentene med Multi-Layer Perceptron (MLP) ble utført på et datasett bestående av 227 prøver og 28 initielle egenskaper, fordelt over fem dronemoduser (0–4). For å etablere en grunnlinje ble det først kjørt en Dummy Classifier, som oppnådde en testnøyaktighet på 28,26 %. En uregulert "Kitchen Sink"-modell viste en treningsnøyaktighet på 100 %, men falt til 19,57 % på testsettet, noe som indikerer at modellen i sin råform memorerte støy fremfor reelle mønstre.
+Eksperimentene med Multi-Layer Perceptron (MLP) ble utført på et datasett bestående av 227 opptak fordelt over fem dronemoduser (0–4), med en klassefordeling på henholdsvis 63, 41, 42, 42 og 39 opptak per klasse. Hvert opptak ble representert som en flat feature-vektor med 192 egenskaper, beregnet ved å aggregere 300 frekvensbånds-energivinduer med statistisk pooling (gjennomsnitt, standardavvik og maksimum per band). For å etablere en grunnlinje ble det først kjørt en Dummy Classifier basert på mest-hyppig-strategi, som oppnådde en testnøyaktighet på 28,26 % og en macro-F1 på 0,09. En uregulert "Kitchen Sink"-modell viste en treningsnøyaktighet på 100 %, men falt til 84,78 % på testsettet, noe som indikerer at modellen memorerte treningsdataene fremfor å generalisere.
 
-Gjennom en filtreringsprosess ble redundante egenskaper som fL_max og fH_max, samt fH_min på grunn av lav varians, fjernet. Dette etterlot 25 egenskaper for optimalisering. Ved bruk av GridSearchCV ble den beste modellen identifisert med en arkitektur på to lag med 16 nevroner hver (16, 16), en læringsrate på 0,001 og en regulariseringsparameter (alpha) på 0,05. Denne konfigurasjonen stabiliserte modellen, med en treningsnøyaktighet på 38,67 % og en testnøyaktighet på 26,09 %. Resultatet viser en modell som i større grad forsøker å generalisere, selv om treffprosenten forblir lav.
+Ved bruk av GridSearchCV med 5-fold stratifisert kryssvalidering og macro-F1 som scoringsmetrikk ble den beste modellen identifisert med ett skjult lag med 64 nevroner, regulariseringsparameter α = 1,0 og læringsrate 0,001. Denne konfigurasjonen oppnådde en CV macro-F1 på 0,85, en treningsnøyaktighet på 98,90 % og en testnøyaktighet på 82,61 %, med en test macro-F1 på 0,82. Tabell X oppsummerer per-klasse-ytelsen:
 
-Analyse av forvirringsmatrisen i @MLP_confusion gir en visuell fremstilling av modellens tendenser. Matrisen viser en tydelig skjevhet mot modus 3, som predikeres betydelig oftere enn det faktiske antallet i testsettet. Det observeres også en markant overlapping mellom modus 0 og modus 2, hvor modellen ofte forveksler disse to klassene. Den spredte distribusjonen av tall utenfor diagonalen i @MLP_confusion dokumenterer at de nåværende egenskapene ikke gir tilstrekkelig separasjon mellom klassene i det valgte egenskapsrommet.
+#figure(
+  table(
+    columns: (auto, auto, auto, auto, auto),
+    align: center,
+    table.header(
+      [*Klasse*], [*Presisjon*], [*Recall*], [*F1-score*], [*Støtte*],
+    ),
+    [0], [1,00], [0,69], [0,82], [13],
+    [1], [0,80], [1,00], [0,89], [8],
+    [2], [0,67], [0,89], [0,76], [9],
+    [3], [0,89], [1,00], [0,94], [8],
+    [4], [0,83], [0,62], [0,71], [8],
+    [*Macro avg*], [*0,84*], [*0,84*], [*0,82*], [*46*],
+    [*Weighted avg*], [*0,85*], [*0,83*], [*0,82*], [*46*],
+  ),
+  caption: [Klassifikasjonsrapport for MLP-modellen på testsettet (N = 46).]
+) <tab-mlp-report>
+
+Analyse av forvirringsmatrisen i @MLP_confusion gir en visuell fremstilling av modellens tendenser. Diagonalen er tydelig dominerende, og modellen klassifiserer modus 1 og modus 3 med perfekt recall. De største utfordringene finnes i modus 0, der 4 av 13 opptak feiltolkes som andre klasser, og modus 4, der 3 av 8 opptak klassifiseres feil. Modus 2 oppnår god recall (8 av 9), men noe lavere presisjon, noe som indikerer at modellen iblant forveksler andre klasser med modus 2.
 
 #figure(
   caption: [Forvirringsmatrise for MLP],
-  image("../img/MLP_confusion.png", width: 80%)
+  image("../img/mlp v2 confusion matrix.png", width: 80%)
 )<MLP_confusion>
 
-
-=== Testprosedyre
-
-
-
-=== Resultater
-
-
-
-=== Begrensninger 
-
-
-
-== Eksperiment 2
-
-
-
-=== Testprosedyre
-
-
-
-=== Resultater
-
-
-
-== Eksperiment 3
-
-
-
-=== Testprosedyre
-
-
-
-=== Resultater
 
 == CNN
 

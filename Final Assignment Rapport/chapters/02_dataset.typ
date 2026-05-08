@@ -33,9 +33,11 @@ Frekvensinnholdet er mer stabilt enn tidsdomenet, siden dronene kommuniserer på
 
 Begge modellene bruker glidende vinduisering: 64 000 sampler per vindu, 50 % overlapping, og 32 frekvensbånd per kanal via FFT. L- og H-båndet gir 64 frekvensbånds-energier per vindu, og alle opptak paddes eller avkortes til 300 vinduer. CNN mottar disse direkte som en (300, 64)-matrise. MLP komprimerer dem til 192 egenskaper ved å beregne gjennomsnitt, standardavvik og maksimum per frekvensbånd.
 
+DroneRF-datasettet har noen egenskaper som gjør det utfordrende å bruke direkte i maskinlæring. Opptakene er svært lange tidsserier — en fil inneholder 10 millioner målepunkter — og kan ikke brukes direkte som individuelle treningspunkter. Selv etter vinduisering er RF-data høydimensjonale, noe som øker risikoen for overfitting særlig med få treningseksempler. Klasseubalansen er moderat, men nok til at modeller kan lære å favorisere majoritetsklassene. En fjerde utfordring er at moduser fra ulike dronefamilier kan gi overlappende RF-signaturer, særlig der BUI-koden slår dem sammen under samme klasselabel.
+
 == Eksplorativ Dataanalyse (EDA)
 
-Klassefordelingen er vist i @class_distribution_table. Klassene 2 og 3 slår sammen opptak fra ulike dronefamilier under samme BUI-kode, noe som øker variasjonen innad i disse klassene og gjør dem vanskeligere å skille.
+Klassefordelingen er vist i @class_distribution_table. Klassene 2 og 3 slår sammen opptak fra ulike dronefamilier under samme BUI-kode, noe som øker variasjonen innad i disse klassene og gjør dem vanskeligere å skille. Frekvensbånds-energiene har svært lave absoluttverdier — typisk i størrelsesorden $10^(-4)$ til $10^(-3)$ — og enkeltopptak kan vise kraftige toppverdier som avviker markant fra medianen. Denne profilen, med et stabilt støygulv og sporadiske energitopper, er grunnen til at RobustScaler (basert på median og interkvartilspredning) er bedre egnet enn StandardScaler for MLP-normalisering.
 
 #figure(
   caption: [Klassefordeling i DroneRF-datasettet (N = 227).],

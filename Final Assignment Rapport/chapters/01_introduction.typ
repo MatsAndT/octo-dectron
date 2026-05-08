@@ -6,14 +6,16 @@ I dette prosjektet undersøker vi om maskinlæringsmodeller kan bruke RF-signale
 
 == Bakgrunn
 
-DroneRF-datasettet inneholder RF-opptak fra ulike droner og aktivitetsmoduser @DroneRF_dataset. Råsignalene deles inn i overlappende vinduer, og for hvert vindu beregnes gjennomsnittlig energi per frekvensbånd. For MLP komprimeres vinduene til én flat feature-vektor per opptak. CNN mottar vindusekvensen direkte og kan finne mønstre i hvordan frekvensprofilen endrer seg gjennom opptaket.
+Tradisjonelle metoder for dronedeteksjon inkluderer radar, kamera og akustiske sensorer. Kameraer er avhengige av lys- og siktforhold, akustiske sensorer påvirkes av støy, og radarbaserte løsninger kan kreve spesialisert utstyr. RF-basert analyse er et interessant alternativ, siden de fleste droner sender radiosignaler for styring, telemetri og videooverføring. Disse signalene er til stede uavhengig av siktforhold og kan potensielt gi informasjon om hva dronen gjør, ikke bare om den er i lufta.
+
+DroneRF-datasettet @DroneRF_dataset inneholder RF-opptak fra tre kommersielle dronemodeller i ulike aktivitetstilstander, og er én av få offentlig tilgjengelige databaser for dette formålet. Rå RF-signaler er lange tidsserier som ikke kan brukes direkte som modellinput. Signalene må segmenteres i vinduer og representeres på en form som egner seg for maskinlæring. Prosjektet undersøker to representasjonsstrategier: aggregerte frekvensbånds-statistikker for MLP, og direkte vinduesekvenser for CNN.
 
 == Problemstilling
 
 #set quote(block: true)
 #quote()[_Kan maskinlæringsmodeller klassifisere dronemodus basert på RF-signaler fra DroneRF-datasettet?_]
 
-Modellene evalueres med nøyaktighet, macro-F1 og confusion matrix. Macro-F1 er viktig fordi klassene er ubalanserte, og confusion matrix viser hvilke moduser som forveksles.
+Modellene evalueres med nøyaktighet, macro-F1, presisjon, recall og confusion matrix. Macro-F1 er spesielt viktig fordi modusklassene er ubalanserte — høy nøyaktighet alene kan gi et misvisende bilde dersom modellen favoriserer de største klassene. Confusion matrix brukes for å identifisere hvilke moduser som forveksles, og om feilmønsteret kan forklares med likheter i RF-signaturene eller begrensninger i datasettstrukturen.
 
 === Forskningsspørsmål
 

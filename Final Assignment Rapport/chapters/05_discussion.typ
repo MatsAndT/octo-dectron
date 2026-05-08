@@ -2,11 +2,7 @@
 
 == Valg av klasser
 
-Et av de tidlige valgene vi tok var om vi skulle trene modellen til å klassifisere datasettet basert på dronetype eller dronemodus. Vi valgte å klassifisere basert på dronemodus, det vil si tilstander som påslått og tilkoblet eller automatisk sveveflyging. For å ta dette valget måtte vi spørre oss selv hva som ville være mest nyttig i et reelt scenario. Vi konkluderte raskt med at klassifisering basert på dronemodell ikke ga særlig mening. Datasettet inneholder kun tre dronemodeller, mens det i virkeligheten finnes langt flere. I tillegg er det ikke uvanlig å bygge droner selv. Basert på dataene vi har tilgjengelig gir det derfor mest mening å klassifisere ut fra hva dronen faktisk gjør.
-
-Spørsmålet som oppstår etter dette valget er om RF-signalene varierer mellom modeller. Er det mulig å klassifisere dronemodus uten å kjenne til dronemodellen? #highlight[(Dette hadde jeg ikke svaret på når jeg skrev, så det må fylles inn!)]
-
-Én måte å lage en mer robust modell på i fremtiden ville være å klassifisere både modell og modus. På den måten kunne man først identifisere hvilken type drone det er snakk om, og deretter klassifisere hvilken modus den befinner seg i. Dette ville imidlertid kreve langt mer data fra flere dronemodeller. Man kan også argumentere for at RF-signalene fra ulike modeller ikke nødvendigvis er veldig forskjellige, siden teknologier som videooverføring ofte benytter standardiserte protokoller. #highlight[Burde sikkert finne en kilde her?]
+Vi valgte å klassifisere dronemodus fremfor dronetype, fordi modus gir mer operasjonell informasjon — det skiller mellom en drone som er påslått, en som flyr, og en som sender video. Klassifisering av dronetype ville gitt et enklere problem, men med begrenset verdi siden datasettet bare inneholder tre modeller mens det i virkeligheten finnes langt flere. En utfordring ved valget er at like moduser fra ulike produsenter ikke nødvendigvis har lik RF-signatur, noe resultatene bekrefter.
 
 
 
@@ -22,14 +18,10 @@ MLP presterer noe bedre enn CNN (82,6 % vs 71,7 %) til tross for at CNN behandle
 
 == Prestasjon CNN
 
-CNN-modellen oppnådde en testnøyaktighet på 71,7 % og en macro-F1 på 0,66, noe som representerer en markant forbedring sammenlignet med MLP. Spørsmålet er hva som driver denne forskjellen, og hvorfor modellen likevel mislykkes med bestemte klasser.
+CNN-modellen oppnådde 71,7 % testnøyaktighet og macro-F1 på 0,66. At modellen klarer dette med kun 11 000 parametere tyder på at RF-signalet inneholder nyttig strukturinformasjon utover et enkelt gjennomsnittsspekter.
 
-Den viktigste faktoren for CNN-modellens ytelse er at den mottar signalet som en sekvens av 300 frekvensbånds-energivinduer og kan dermed finne mønstre i hvordan frekvensprofilen endrer seg gjennom opptaket. At modellen klarer 71,7 % med kun 11 000 parametere tyder på at RF-signalet faktisk inneholder strukturinformasjon utover et enkelt gjennomsnittsspekter.
+Modellkapasitet var avgjørende: et første forsøk med 203 461 parametere kollapset til én-klasse-prediksjon, analogt med Kitchen Sink-kollapsen for MLP. Den endelige modellen, kombinert med L2, dropout og GaussianNoise, gav et lite gap mellom trenings- og valideringskurver, som vist i @fig-cnn-curves.
 
-Modellkapasitet viste seg å være en avgjørende variabel. Det første forsøket med 203 461 parametere kollapset til én-klasse-prediksjon, analogt med Kitchen Sink-kollapsen for MLP. Med kun 181 treningsfiler er det matematisk sett et svært lavt antall parameteroppdateringer per treningsparameter, noe som betyr at en stor modell raskt memorerer støy fremfor å generalisere. Den endelige modellen på 11 000 parametere, kombinert med L2-straff på alle lag, dropout og GaussianNoise-augmentering, gav et trenings-/valideringsgap som læringsforløpet i @fig-cnn-curves bekrefter er lite. Dette viser at valg av riktig modellkapasitet, ikke bare regulariseringsteknikk, er det primære middelet mot overfitting ved små datasett.
-
-Klasseimbalansen ble håndtert gjennom frekvensbaserte klassevekter, men resultatene viser at dette ikke var tilstrekkelig for alle klasser. Modus 2 og modus 3 oppnådde recall på henholdsvis 22 % og 25 %, mens modus 0, 1 og 4 ble klassifisert riktig. En sannsynlig forklaring er strukturen i BUI-koden: klasse 2 og 3 er definert av de to siste bitene og inneholder opptak fra to ulike dronefamilier, eksempelvis Bebop og AR Drone, i den samme klassen. Dersom RF-signaturen for «automatisk svev» varierer mellom produsenter, vil variasjonen innad i klasse 2 og 3 være grunnleggende høyere enn i klasser dominert av én dronefamilie. Forvirringsmatrisen i @fig-cnn-confusion støtter dette: modus 2 og 3 forveksles ikke primært med hverandre, men fordeles mellom modus 0 og 4, noe som tyder på at modellen lærer produsentspesifikke signaturer og ikke en modusspesifikk signatur som er stabil på tvers av produsenter.
-
-Funnet underbygger det samme argumentet som ble reist under valg av klasser: klassifisering av dronemodus på tvers av produsenter er en vanskeligere oppgave enn klassifisering av dronefamilie, fordi RF-protokollene som definerer en modus ikke nødvendigvis er felles for ulike fabrikanter. Begge modellene støter på den samme grunnleggende utfordringen: de klassene som blander opptak fra ulike dronefamilier har for stor variasjon innad til at modellene klarer å lære en pålitelig felles signatur.
+Modus 2 og 3 oppnådde recall på henholdsvis 22 % og 25 %. BUI-koden slår her sammen opptak fra ulike dronefamilier i samme klasse — for eksempel Bebop og AR Drone under modus 10. Dersom RF-signaturen for samme modus varierer mellom produsenter, vil variasjonen innad i klassen være for høy til at modellen kan lære én felles signatur. Forvirringsmatrisen i @fig-cnn-confusion bekrefter dette: modus 2 og 3 forveksles ikke med hverandre, men fordeles mellom modus 0 og 4 — modellen lærer produsentspesifikke mønstre, ikke modusspesifikke. Begge modellene støter på det samme problemet.
 
 ==

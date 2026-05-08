@@ -9,8 +9,7 @@
 #align(center + horizon)[[Denne siden er blank med hensikt]]
 #pagebreak()
 
-= Vedlegg A 
-== Dataloader
+= Vedlegg A — Dataloader
 ```python
 import os
 import re
@@ -18,15 +17,16 @@ import csv
 import numpy as np
 from glob import glob
 
-# --- KONFIGURASJON ---
 CACHE_DIR = "cache"
-FFT_SIZE = 4096
+WINDOW_SIZE = 65536   # ~64k sampler per vindu
+HOP_SIZE    = WINDOW_SIZE // 2   # 50% overlapping → ~300 vinduer per fil
+N_BANDS     = 32      # frekvensbånd per kanal
+MAX_WINDOWS = 300     # pad / avkort til dette antallet
 
 def get_cache_path(mode):
-    """Genererer unikt filnavn for hver modus så de ikke overskriver hverandre."""
+    if mode == "cnn":
+        return os.path.join(CACHE_DIR, f"dronerf_dataset_cnn_w{WINDOW_SIZE}_b{N_BANDS}.npz")
     return os.path.join(CACHE_DIR, f"dronerf_dataset_{mode}.npz")
-
-# --- FIL-PARSING OG LASTING ---
 
 def parse_filename(name):
     m = re.match(r"(\d+)([LH])_(\d+)\.csv", name)
@@ -44,40 +44,35 @@ def load_signal(path):
         row = next(csv.reader(f))
     return np.array(row, dtype=np.float32)
 
-# --- SIGNALBEHANDLING ---
+def _band_energies(window: np.ndarray) -> np.ndarray:
+    spectrum = np.abs(np.fft.rfft(window * np.hanning(len(window)), n=WINDOW_SIZE))
+    n_bins = len(spectrum)
+    band_size = n_bins // N_BANDS
+    return np.array(
+        [spectrum[i * band_size : (i + 1) * band_size].mean() for i in range(N_BANDS)],
+        dtype=np.float32,
+    )
 
-def fft(x):
-    x = x * np.hanning(len(x))
-    return np.abs(np.fft.rfft(x, n=FFT_SIZE))
+def _extract_windows(L: np.ndarray, H: np.ndarray) -> np.ndarray:
+    n = min(len(L), len(H))
+    rows = []
+    start = 0
+    while start + WINDOW_SIZE <= n:
+        fl = _band_energies(L[start : start + WINDOW_SIZE])
+        fh = _band_energies(H[start : start + WINDOW_SIZE])
+        rows.append(np.concatenate([fl, fh]))
+        start += HOP_SIZE
+    if not rows:
+        l_pad = np.zeros(WINDOW_SIZE, dtype=np.float32)
+        h_pad = np.zeros(WINDOW_SIZE, dtype=np.float32)
+        l_pad[:n] = L[:n]; h_pad[:n] = H[:n]
+        rows.append(np.concatenate([_band_energies(l_pad), _band_energies(h_pad)]))
+    return np.array(rows, dtype=np.float32)
 
-def spectral_peaks(x, k=5):
-    idx = np.argpartition(x, -k)[-k:]
-    idx = idx[np.argsort(x[idx])[::-1]]
-    return x[idx], idx
-
-def extract_features(L, H, mode="mlp"):
-    fL = fft(L)
-    fH = fft(H)
-
+def extract_features(L, H, mode="cnn"):
     if mode == "cnn":
-        # Returnerer hele spekteret (ca 4098 verdier)
-        return np.concatenate([fL, fH])
-
-    if mode == "mlp":
-        # Returnerer kun utvalgte features (28 verdier)
-        peaks_L, freqs_L = spectral_peaks(fL)
-        peaks_H, freqs_H = spectral_peaks(fH)
-
-        return np.concatenate([
-            peaks_L, freqs_L,
-            peaks_H, freqs_H,
-            [fL.min(), fL.mean(), fL.std(), fL.max()],
-            [fH.min(), fH.mean(), fH.std(), fH.max()],
-        ]).astype(np.float32)
-
-    raise ValueError("mode must be 'cnn' or 'mlp'")
-
-# --- DATASETT-BYGGING ---
+        return _extract_windows(L, H)
+    raise ValueError("mode must be 'cnn'")
 
 def build_index(data_dir):
     files = glob(os.path.join(data_dir, "**", "*.csv"), recursive=True)
@@ -87,330 +82,223 @@ def build_index(data_dir):
         if not parsed: continue
         model_prefix, label_code, band, seg = parsed
         grouped.setdefault((model_prefix, label_code, seg), {})[band] = f
-
     samples = []
     label_codes = sorted({key[1] for key in grouped})
     label_map = {label_code: i for i, label_code in enumerate(label_codes)}
-
     for (model_prefix, label_code, seg), bands in sorted(grouped.items()):
         if "L" in bands and "H" in bands:
             samples.append((label_map[label_code], bands["L"], bands["H"]))
-
     return samples, label_map
 
-def build_dataset(data_dir, mode="mlp"):
+def build_dataset(data_dir):
     samples, mode_map = build_index(data_dir)
-    X, y = [], []
-
+    X_list, y = [], []
     for label, l_path, h_path in samples:
         L, H = load_signal(l_path), load_signal(h_path)
         n = min(len(L), len(H))
-        X.append(extract_features(L[:n], H[:n], mode))
+        X_list.append(extract_features(L[:n], H[:n], mode="cnn"))
         y.append(label)
+    n_features = N_BANDS * 2
+    X_out = np.zeros((len(X_list), MAX_WINDOWS, n_features), dtype=np.float32)
+    for i, windows in enumerate(X_list):
+        n_w = min(len(windows), MAX_WINDOWS)
+        X_out[i, :n_w] = windows[:n_w]
+    return X_out, np.array(y, dtype=np.int64), mode_map
 
-    return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64), mode_map
-
-# --- HOVEDFUNKSJON FOR LASTING ---
-
-def load_or_build(data_dir, mode="mlp", use_cache=True):
+def load_or_build(data_dir, mode="cnn", use_cache=True):
     cache_path = get_cache_path(mode)
-    
     if use_cache and os.path.exists(cache_path):
-        print(f"Loading cached dataset from {cache_path}...")
         data = np.load(cache_path, allow_pickle=True)
-        
-        # Sjekker for sikkerhets skyld at cachen faktisk inneholder riktig modus
         if str(data["mode"]) == mode:
             X = data["X"]
             y = data["y"].astype(np.int64)
             mode_map = data["mode_map"].item()
-            feature_names = data["feature_names"] if "feature_names" in data.files else None
-            
-            print(f"Cache loaded successfully. X shape: {X.shape}")
-            return X, y, {v: k for k, v in mode_map.items()}, feature_names
-
-    print(f"Building new {mode.upper()} dataset from CSV...")
-    X, y, mode_map = build_dataset(data_dir, mode)
-    feature_names = get_feature_names(mode)
-
+            return X, y, {v: k for k, v in mode_map.items()}, None
+    X, y, mode_map = build_dataset(data_dir)
     os.makedirs(CACHE_DIR, exist_ok=True)
-    np.savez(
-        cache_path,
-        X=X, y=y, mode_map=mode_map,
-        feature_names=np.array(feature_names, dtype=object),
-        mode=mode
-    )
-
-    return X, y, {v: k for k, v in mode_map.items()}, feature_names
-
-def get_feature_names(mode="mlp"):
-    if mode == "cnn": return None
-    return [
-        "fL_peak1", "fL_peak2", "fL_peak3", "fL_peak4", "fL_peak5",
-        "fL_freq1", "fL_freq2", "fL_freq3", "fL_freq4", "fL_freq5",
-        "fH_peak1", "fH_peak2", "fH_peak3", "fH_peak4", "fH_peak5",
-        "fH_freq1", "fH_freq2", "fH_freq3", "fH_freq4", "fH_freq5",
-        "fL_min", "fL_mean", "fL_std", "fL_max",
-        "fH_min", "fH_mean", "fH_std", "fH_max",
-    ]
-
-if __name__ == "__main__":
-    data_dir = ".DroneRF"
-    X_mlp, y_mlp, _, _ = load_or_build(data_dir, mode="mlp")
-    X_cnn, y_cnn, _, _ = load_or_build(data_dir, mode="cnn")
+    np.savez(cache_path, X=X, y=y, mode_map=mode_map, mode=mode)
+    return X, y, {v: k for k, v in mode_map.items()}, None
 ```
 
+#pagebreak()
 
-== EDA av data til MLP
-
+= Vedlegg B — MLP
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 
-from load_data import load_or_build
-
-# -------------------------------------------------
-# DATASET INFO (pandas)
-# -------------------------------------------------
-def print_dataset_info(X, y, label_map=None, feature_names=None):
-    y = np.asarray(y).reshape(-1)
-
-    if feature_names is None:
-        feature_names = [f"feature_{i}" for i in range(X.shape[1])]
-
-    df = pd.DataFrame(X, columns=feature_names)
-    df["label"] = y
-
-    # map labels if provided
-    if label_map is not None:
-        df["label"] = df["label"].map(label_map)
-
-    print("\n" + "=" * 60)
-    print("DATASET SUMMARY")
-    print("=" * 60)
-
-    print(f"\nSamples:  {len(df)}")
-    print(f"Features: {X.shape[1]}")
-
-    print("\nClass distribution:")
-    print(df["label"].value_counts())
-
-    print("\nClass distribution (%):")
-    print((df["label"].value_counts(normalize=True) * 100).round(2))
-
-    print("\nFeature statistics:")
-    print(df[feature_names].describe().T)
-
-    print("=" * 60 + "\n")
-
-    print(df.describe().T.sort_values("std", ascending=False))
-
-    print(df.columns)
-
-
-if __name__ == "__main__":
-
-    data_dir = ".DroneRF"
-
-    X, y, mode_map, feature_names = load_or_build(data_dir, mode="mlp")
-
-    print_dataset_info(
-        X,
-        y,
-        label_map=mode_map,
-        feature_names=feature_names
-    )
-```
-
-== MLP
-```python
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-
-from load_data import load_or_build
-
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 from sklearn.neural_network import MLPClassifier
-from sklearn.feature_selection import VarianceThreshold
+from sklearn.utils import compute_sample_weight
 from sklearn.dummy import DummyClassifier
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    ConfusionMatrixDisplay,
+    accuracy_score, f1_score, classification_report, ConfusionMatrixDisplay,
 )
+from load_data import load_or_build, N_BANDS
 
-def filter_features(X_train, X_test, feature_names):
-    """
-    Fjerner manuelle features (max) og bruker VarianceThreshold 
-    for å fjerne de med aller minst standardavvik.
-    """
-    df_train = pd.DataFrame(X_train, columns=feature_names)
-    
-    # 1. Fjern redundante features (de er identiske med peak1)
-    to_drop = ["fL_max", "fH_max"]
-    df_train = df_train.drop(columns=[c for c in to_drop if c in df_train.columns])
-    
-    # 2. Fjern features med svært lav varians
-    selector = VarianceThreshold(threshold=1e-9) 
-    selector.fit(df_train)
-    
-    # Lagre navnene på det vi beholder
-    kept_features = df_train.columns[selector.get_support()].tolist()
-    removed_features = [c for c in df_train.columns if c not in kept_features]
-    
-    print("\n--- FEATURE FILTERING ---")
-    print(f"Fjernet redundante: {to_drop}")
-    print(f"Fjernet pga lav varians: {removed_features}")
-    print(f"Antall features beholdt: {len(kept_features)} av {len(feature_names)}")
-    
-    # Apply to train
-    X_train_filtered = df_train[kept_features].values
-    
-    # Apply to test
-    df_test = pd.DataFrame(X_test, columns=feature_names)
-    df_test = df_test.drop(columns=[c for c in to_drop if c in df_test.columns])
-    X_test_filtered = df_test[kept_features].values
-    
-    return X_train_filtered, X_test_filtered, kept_features
 
-def run_dummy_classifier(X, y):
+def pool_windows(X: np.ndarray) -> np.ndarray:
+    """(n_files, n_windows, n_features) → (n_files, n_features * 3)"""
+    mean = X.mean(axis=1)
+    std  = X.std(axis=1)
+    peak = X.max(axis=1)
+    return np.concatenate([mean, std, peak], axis=1)
+
+
+def run_dummy(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-
+        X, y, test_size=0.2, random_state=42, stratify=y)
     dummy = DummyClassifier(strategy="most_frequent")
     dummy.fit(X_train, y_train)
+    print(f"Dummy test accuracy : {dummy.score(X_test, y_test):.4f}")
+    print(f"Dummy test macro-F1 : {f1_score(y_test, dummy.predict(X_test), average='macro', zero_division=0):.4f}")
 
-    print("\n--- DUMMY CLASSIFIER (Most Frequent) ---")
-    print(f"Train Accuracy: {dummy.score(X_train, y_train):.4f}")
-    print(f"Test Accuracy:  {dummy.score(X_test, y_test):.4f}")
-    
-    return dummy
 
-def run_mlp_kitchen_sink(X, y):
-    # Vi bruker alle originale features uten filtrering
+def run_kitchen_sink(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-
-    # Standard oppsett: ingen regularisering, standard lag
+        X, y, test_size=0.2, random_state=42, stratify=y)
     pipe = Pipeline([
-        ("scaler", StandardScaler()), 
-        ("mlp", MLPClassifier(
-            hidden_layer_sizes=(100, 100), # Stor kapasitet
-            alpha=0,                      # Ingen brems (ingen L2-straff)
-            max_iter=2000,
-            random_state=42
-        ))
+        ("scaler", RobustScaler()),
+        ("mlp", MLPClassifier(hidden_layer_sizes=(256, 128), alpha=0,
+                              max_iter=2000, random_state=42)),
     ])
-
     pipe.fit(X_train, y_train)
+    print(f"Kitchen Sink train: {pipe.score(X_train, y_train):.4f}  test: {pipe.score(X_test, y_test):.4f}")
 
-    print("\n--- KITCHEN SINK MLP (Ufiltrert & Uregulert) ---")
-    print(f"Train Accuracy: {pipe.score(X_train, y_train):.4f}")
-    print(f"Test Accuracy:  {pipe.score(X_test, y_test):.4f}")
-    
-    return pipe
 
-def run_mlp_pipeline(X, y, feature_names):
+def run_mlp(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42,
-        stratify=y
-    )
-
-    # Filtrer data etter split for å unngå data lekkasje
-    X_train_filtered, X_test_filtered, filtered_names = filter_features(X_train, X_test, feature_names)
-
-
-    # Pipeline med StandardScaler og MLP
+        X, y, test_size=0.2, random_state=42, stratify=y)
+    sample_weights = compute_sample_weight("balanced", y_train)
     pipe = Pipeline([
-        ("scaler", StandardScaler()),
+        ("scaler", RobustScaler()),
         ("mlp", MLPClassifier(
-            activation="relu",
-            solver="adam",
-            max_iter=5000,
-            
-            # --- Early Stopping Parametere ---
-            early_stopping=True,      # Denne var med da det gikk bra
-            validation_fraction=0.15,  # Bruker 20% av trening til å sjekke når den skal stoppe
-            n_iter_no_change=75,      # Gir den 50 runder på å forbedre seg før den stopper
-            
-            # --- Læringskontroll ---
-            learning_rate="adaptive", 
-            random_state=42
-        ))
+            activation="relu", solver="adam", max_iter=5000,
+            early_stopping=True, validation_fraction=0.15,
+            n_iter_no_change=50, learning_rate="adaptive", random_state=42,
+        )),
     ])
-
     param_grid = {
-    # Vi vet at (16, 16) fungerer, så vi tester litt større varianter av "små" lag
-    "mlp__hidden_layer_sizes": [
-        (16, 16), 
-        (32, 16), 
-        (32, 32),
-        (24, 24)
-    ],
-    
-    # Siden 0.1 i alpha fungerte bra for å hindre overfitting, 
-    # tester vi verdier rett rundt der
-    "mlp__alpha": [0.05, 0.1, 0.2, 0.5],
-    
-    # Vi holder oss til 0.001, men legger til 0.005 for å se om raskere læring hjelper
-    "mlp__learning_rate_init": [0.001, 0.005]
-}
+        "mlp__hidden_layer_sizes": [(32,), (64,), (32, 16), (64, 32)],
+        "mlp__alpha": [0.05, 0.1, 0.5, 1.0],
+        "mlp__learning_rate_init": [0.001, 0.0005],
+    }
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    grid = GridSearchCV(pipe, param_grid, cv=cv, scoring="f1_macro", n_jobs=-1, verbose=1)
+    grid.fit(X_train, y_train, mlp__sample_weight=sample_weights)
+    best = grid.best_estimator_
+    y_pred = best.predict(X_test)
+    print("Beste parametere:", grid.best_params_)
+    print(f"CV macro-F1: {grid.best_score_:.4f}")
+    print(f"Test accuracy: {accuracy_score(y_test, y_pred):.4f}")
+    print(f"Test macro-F1: {f1_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, cmap="Blues")
+    plt.tight_layout(); plt.show()
+    return best, grid
 
-    grid = GridSearchCV(
-        pipe,
-        param_grid=param_grid,
-        cv=5,
-        scoring="accuracy",
-        n_jobs=-1,
-        verbose=1
-    )
-
-    grid.fit(X_train_filtered, y_train)
-
-    print("\nBEST PARAMETERS:")
-    print(grid.best_params_)
-    
-    best_model = grid.best_estimator_
-
-    # Sjekk resultater
-    y_train_pred = best_model.predict(X_train_filtered)
-    y_test_pred = best_model.predict(X_test_filtered)
-
-    print(f"\nTRAIN Accuracy: {accuracy_score(y_train, y_train_pred):.4f}")
-    print(f"TEST Accuracy: {accuracy_score(y_test, y_test_pred):.4f}")
-    
-    print("\nCLASSIFICATION REPORT (TEST):")
-    print(classification_report(y_test, y_test_pred, zero_division=0))
-
-    disp = ConfusionMatrixDisplay.from_predictions(
-        y_test,
-        y_test_pred,
-        cmap="Blues",
-        normalize=None
-    )
-    disp.ax_.set_title("Test-set Confusion Matrix")
-    plt.tight_layout()
-    plt.show()
-
-
-    return best_model, grid
 
 if __name__ == "__main__":
+    data_dir = ".DroneRF"
+    X_3d, y, label_map, _ = load_or_build(data_dir, mode="cnn")
+    X = pool_windows(X_3d)
+    run_dummy(X, y)
+    run_kitchen_sink(X, y)
+    run_mlp(X, y)
+```
 
-    data_dir = ".DroneRF" 
+#pagebreak()
 
-    X, y, mode_map, feature_names = load_or_build(data_dir, mode="mlp")
+= Vedlegg C — CNN
+```python
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
 
-    run_dummy_classifier(X, y)
-    run_mlp_kitchen_sink(X, y)
-    model, grid = run_mlp_pipeline(X, y, feature_names)
+from tensorflow.keras import layers, models, regularizers
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay
+from sklearn.utils.class_weight import compute_class_weight
+
+from load_data import load_or_build, MAX_WINDOWS, N_BANDS
+
+
+def build_model(input_shape, num_classes):
+    l2 = regularizers.L2(0.005)
+    model = models.Sequential([
+        layers.Input(shape=input_shape),
+        layers.GaussianNoise(0.05),
+        layers.Conv1D(16, 7, activation="relu", padding="same", kernel_regularizer=l2),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(4),
+        layers.Dropout(0.4),
+        layers.Conv1D(32, 5, activation="relu", padding="same", kernel_regularizer=l2),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(4),
+        layers.Dropout(0.4),
+        layers.GlobalAveragePooling1D(),
+        layers.Dense(32, activation="relu", kernel_regularizer=l2),
+        layers.Dropout(0.5),
+        layers.Dense(num_classes, activation="softmax"),
+    ])
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+    return model
+
+
+def main():
+    data_dir = ".DroneRF"
+    X, y, label_map, _ = load_or_build(data_dir, mode="cnn")
+    num_classes = len(np.unique(y))
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y)
+
+    def normalise(arr):
+        m = np.max(np.abs(arr), axis=(1, 2), keepdims=True)
+        m = np.where(m == 0, 1.0, m)
+        return arr / m
+
+    X_train = normalise(X_train)
+    X_test  = normalise(X_test)
+
+    class_weights = compute_class_weight(
+        class_weight="balanced", classes=np.unique(y_train), y=y_train)
+    class_weights = dict(enumerate(class_weights))
+
+    model = build_model((X_train.shape[1], X_train.shape[2]), num_classes)
+    model.summary()
+
+    early_stop = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss", patience=20, restore_best_weights=True)
+
+    history = model.fit(
+        X_train, y_train, batch_size=16, epochs=200,
+        validation_data=(X_test, y_test),
+        class_weight=class_weights, callbacks=[early_stop],
+    )
+
+    y_pred = np.argmax(model.predict(X_test), axis=1)
+    print(classification_report(y_test, y_pred, zero_division=0))
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    axes[0].plot(history.history["loss"], label="train")
+    axes[0].plot(history.history["val_loss"], label="val")
+    axes[0].set_title("Loss"); axes[0].legend()
+    axes[1].plot(history.history["accuracy"], label="train")
+    axes[1].plot(history.history["val_accuracy"], label="val")
+    axes[1].set_title("Accuracy"); axes[1].legend()
+    plt.tight_layout()
+    plt.savefig("learning_curves.png"); plt.show()
+
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, cmap="Blues")
+    plt.tight_layout(); plt.show()
+
+
+if __name__ == "__main__":
+    main()
 ```

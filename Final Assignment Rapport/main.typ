@@ -12,7 +12,7 @@
   className: [
     ING3513 Introduksjon til kunstig intelligens og maskinlæring
   ],
-  abstract: "lorem ipsum",
+  abstract: "Dette prosjektet undersøker om maskinlæringsmodeller kan klassifisere dronemodus basert på RF-signaler fra DroneRF-datasettet. Datasettet inneholder 227 opptak fordelt over fem klasser fra tre dronemodeller. Begge modellene bruker glidende vinduisering av råsignalene: for hvert vindu beregnes frekvensbånds-energier via FFT, noe som gir en tidsserie av spektrale profiler. MLP komprimerer disse til 192 aggregerte egenskaper (gjennomsnitt, standardavvik og maksimum per bånd), mens CNN behandler vinduesekvensen direkte. MLP oppnådde 82,6 % testnøyaktighet og macro-F1 på 0,82; CNN oppnådde 71,7 % og macro-F1 på 0,66. Begge modellene feiler på de samme to klassene, der BUI-koden slår sammen opptak fra ulike dronefamilier. Resultatene viser at RF-signaler inneholder tilstrekkelig informasjon til å klassifisere dronemodus, og at valg av signalrepresentasjon er viktigere enn valg av modelltype for dette datasettet.",
   doc,
 )
 

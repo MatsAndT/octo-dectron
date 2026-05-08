@@ -31,7 +31,6 @@ Analyse av forvirringsmatrisen i @MLP_confusion gir en visuell fremstilling av m
   image("../img/mlp v2 confusion matrix.png", width: 80%)
 )<MLP_confusion>
 
-
 == CNN
 
 Eksperimentene med CNN ble gjennomført på det samme datasettet som MLP, bestående av 227 opptak fordelt over fem dronemoduser (0–4), med en klassefordeling på henholdsvis 63, 41, 42, 42 og 39 opptak per klasse. I motsetning til MLP, som opererer på manuelt konstruerte feature-vektorer, ble CNN-modellen trent direkte på frekvensbånd-energier ekstrahert via glidende vinduing av råsignalene. Hvert opptak ble representert som en matrise av form (300, 64), der 300 tilsvarer antall vinduer på 64 000 sampler med 50 % overlapping, og 64 tilsvarer 32 frekvensbånd fra henholdsvis lavt og høyt frekvensbånd.
@@ -80,10 +79,10 @@ Den endelige modellen oppnådde en testnøyaktighet på 71,7 % (33 av 46 korrekt
 
 @fig-cnn-confusion viser forvirringsmatrisen for testsettet. Modellen klassifiserer modus 0 og modus 1 perfekt (henholdsvis 13/13 og 8/8 korrekte), og modus 4 med full recall (8/8). De største utfordringene finnes i modus 2 og modus 3, der modellen kun identifiserer 2 av 9 og 2 av 8 korrekt. For modus 2 klassifiseres 6 av 9 opptak feilaktig som modus 0, mens modus 3 fordeles mellom modus 0 (2 opptak) og modus 4 (4 opptak). Dette mønsteret, der modusene 2 og 3 forveksles med andre klasser fremfor med hverandre, tyder på at disse RF-signaturene deler kjennetegn med bakgrunnsaktivitet og flygesignaler fra andre moduser, heller enn at de er innbyrdes vanskelige å skille.
 
-Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. Sammenlignet med MLP, som oppnådde en testnøyaktighet på 26,09 % med macro-F1 på tilsvarende lavt nivå, representerer CNN-modellens 71,7 % en vesentlig forbedring, og indikerer at den tidsseriebaserte, frekvensoppdelte representasjonen bærer betydelig mer diskriminerende informasjon enn de manuelt konstruerte feature-vektorene benyttet av MLP.
+Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. MLP-modellen oppnådde 82,61 % testnøyaktighet og macro-F1 på 0,82 på de samme dataene, noe som er noe høyere enn CNN. Begge modellene sliter med de samme to klassene (modus 2 og 3), noe som tyder på at utfordringen ligger i dataene heller enn i valg av modelltype.
 
 === Begrensninger
 
 En vesentlig metodisk begrensning er at testsettet kun består av 46 opptak. Med så få testpunkter er estimatene for presisjon, recall og F1 per klasse statistisk usikre; for klasser med åtte til ni testeksempler vil ett enkelt feilklassifisert opptak gi et utslag på over ti prosentpoeng i recall. Resultatene bør derfor tolkes som en indikasjon på modellens generaliseringsevne heller enn som presise ytelsesestimater.
 
-En ytterligere begrensning er at de fem klassene i SimpleModel-implementasjonen er definert ut fra de to siste bitene i BUI-koden, noe som innebærer at moduser fra ulike dronefamilier — eksempelvis Bebop og AR Drone i modus 00 — samles i samme klasse. Denne forenklingen øker intra-klasse-variansen og gjør klassifikasjonsoppgaven vanskeligere enn om modusene var separert per dronefamilie. De to klassene med lav recall (modus 2 og 3) tilsvarer nettopp de modusene der to ulike dronefamilier er slått sammen, noe som understøtter denne hypotesen.
+En ytterligere begrensning er at de fem klassene i SimpleModel-implementasjonen er definert ut fra de to siste bitene i BUI-koden, noe som innebærer at moduser fra ulike dronefamilier — eksempelvis Bebop og AR Drone i modus 00 — samles i samme klasse. Dette øker variasjonen innad i klassen og gjør klassifikasjonsoppgaven vanskeligere enn om modusene var separert per dronefamilie. De to klassene med lav recall (modus 2 og 3) tilsvarer nettopp de modusene der to ulike dronefamilier er slått sammen, noe som understøtter denne hypotesen.

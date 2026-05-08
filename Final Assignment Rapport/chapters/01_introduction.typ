@@ -8,9 +8,9 @@ I dette prosjektet undersøker vi om maskinlæringsmodeller kan bruke RF-signale
 
 Tradisjonelle metoder for dronedeteksjon inkluderer radar, kamera og akustiske sensorer. Disse metodene kan være nyttige, men de har også begrensninger. Kameraer er avhengige av lys- og siktforhold, akustiske sensorer kan påvirkes av støy fra omgivelsene, og radarbaserte løsninger kan kreve dyrt eller spesialisert utstyr. RF-basert analyse er derfor et interessant alternativ, siden de fleste droner sender radiosignaler for styring, telemetri eller videooverføring.
 
-DroneRF-datasettet inneholder radiofrekvens-opptak (RF-opptak) fra ulike droner og ulike aktivitetsmoduser. I prosjektets kode er datasettet strukturert med flere mulige klassifikasjonsmål: `target_binary` for drone mot bakgrunn, `target_family` for dronefamilie, og `target_mode` for en mer detaljert 10-klasse modusklassifisering. Hovedfokuset i prosjektet er `target_mode`, men vi bruker også informasjon om dronefamilie i CNN-eksperimentet for å undersøke om samtidig læring av type og modus kan gi nyttig representasjonslæring.
+DroneRF-datasettet inneholder radiofrekvens-opptak (RF-opptak) fra ulike droner og ulike aktivitetsmoduser. I prosjektets kode er datasettet strukturert med flere mulige klassifikasjonsmål: `target_binary` for drone mot bakgrunn, `target_family` for dronefamilie, og `target_mode` for en mer detaljert 10-klasse modusklassifisering. Hovedfokuset i prosjektet er `target_mode`, Hovedfokuset er modusklassifisering.
 
-Rå RF-opptak er lange kontinuerlige signaler og kan ikke uten videre brukes direkte som input til en modell. Derfor må signalene deles inn i mindre segmenter eller vinduer og representeres på en form som gjør dem egnet for maskinlæring. For Multi-Layer Preception-modellen (MLP-modellen) brukes window-baserte features, mens Convolutional Netural Network-modell (CNN-modellen) bruker rå høy/lav (H/L)-signaler som en todimensjonal input med to kanaler. Dette gjør at modellene undersøker problemet på to forskjellige måter: MLP lærer fra ferdig konstruerte feature-vektorer, mens CNN forsøker å lære mønstre direkte fra signalstrukturen.
+Rå RF-opptak er lange kontinuerlige signaler og kan ikke uten videre brukes direkte som input til en modell. Derfor må signalene deles inn i mindre segmenter eller vinduer og representeres på en form som gjør dem egnet for maskinlæring. Begge modellene bruker den samme grunnleggende signalbehandlingen: signalet deles inn i overlappende vinduer, og for hvert vindu beregnes gjennomsnittlig energi per frekvensbånd. For MLP komprimeres disse vinduene til én flat feature-vektor per opptak. CNN mottar vindusekvensen direkte og kan dermed oppdage mønstre i hvordan frekvensprofilen endrer seg gjennom opptaket.
 
 == Problemstilling
 
@@ -23,7 +23,7 @@ Basert på disse parameterne er det utarbeidet følgende problemstilling:
 #set quote(block: true)
 #quote()[_Kan maskinlæringsmodeller klassifisere dronemodus basert på RF-signaler fra DroneRF-datasettet?_]
 
-I prosjektet sammenligner vi én MLP- og én CNN-modell. MLP-modellen kan trenes direkte på valgt mål, inkludert modusklassifisering, mens CNN-modellen er bygget som en multitask-modell som predikerer både dronefamilie og dronemodus. Dette gjør det mulig å undersøke om en modell som lærer begge oppgavene samtidig kan finne bedre signalrepresentasjoner enn en modell som bare lærer én target om gangen.
+I prosjektet sammenligner vi én MLP- og én CNN-modell, begge trent på å klassifisere dronemodus. Modellene bruker den samme underliggende signalrepresentasjonen, men behandler den på ulike måter: MLP opererer på aggregerte statistikker per frekvensbånd, mens CNN behandler sekvensen av frekvensbåndsvinduer direkte.
 
 Modellene evalueres med nøyaktighet, macro-F1, presisjon, recall og confusion matrix. Macro-F1 er spesielt viktig fordi modusklassene kan være ubalanserte, og fordi total nøyaktighet alene kan gi et misvisende bilde dersom modellen hovedsakelig treffer de største klassene. Confusion matrix brukes for å se hvilke moduser modellene blander sammen, og for å diskutere om feilene skyldes dataene, feature-representasjonen eller modellarkitekturen.
 
@@ -31,9 +31,8 @@ Modellene evalueres med nøyaktighet, macro-F1, presisjon, recall og confusion m
 
 For å svare på problemstillingen undersøkes følgende forskningsspørsmål:
 
-1. Hvor godt klassifiserer en MLP-modell dronemodus når den trenes på window-baserte features?
-2. Hvor godt klassifiserer en CNN-modell dronemodus når den trenes på rå H/L RF-signaler?
-3. Gir multitask-læring, der modellen predikerer både dronefamilie og dronemodus, bedre grunnlag for modusklassifisering?
-4. Hvilke dronemoduser blir oftest forvekslet, og kan feilene forklares med likheter i RF-signalene eller begrensninger i datasettet?
+1. Hvor godt klassifiserer en MLP-modell dronemodus når den trenes på statistisk aggregerte frekvensbånds-energier?
+2. Hvor godt klassifiserer en CNN-modell dronemodus når den trenes direkte på sekvenser av frekvensbånds-energivinduer?
+3. Hvilke dronemoduser blir oftest forvekslet, og kan feilene forklares med likheter i RF-signalene eller begrensninger i datasettet?
 
 

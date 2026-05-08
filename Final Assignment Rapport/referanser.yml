@@ -1,0 +1,119 @@
+DroneRF_dataset:
+  type: Article
+  title: DroneRF dataset - A dataset of drones for RF-based detection, classification and identification
+  date: 2019-08-26
+  author:  MHD Saria Allahham; Mohammad F. Al-Sad; Abdulla Al-Ali; Amr Mohamed; Tamer Khattab; Aiman Erbad
+  url:
+    value: https://www.sciencedirect.com/science/article/abs/pii/S0167739X18330760?via%3Dihub
+    date: 2026-07-04
+
+
+Generativ-AI-Forsvaret_FFI:
+    type: Article
+    title: Slik kan Forsvaret bruke generativ AI
+    url:
+      value: https://www.ffi.no/aktuelt/podkaster/slik-kan-forsvaret-bruke-generativ-ai
+      date: 2025-11-26
+
+Offiser_FOH_2025:
+  type: Misc
+  date: 2025-11-20
+  author: Major S. Midttun; personlig kommunikasjon
+  note: Personlig kommunikasjon via e-post
+
+Offiser_2BN_2025:
+  type: Misc
+  date: 2025-11-27
+  author: Kaptein M. A. von Hafenbrädl; personlig kommunikasjon
+  note: Personlig kommunikasjon via e-post
+
+Offiser_SBBN_2025:
+  type: Misc
+  date: 2025-12-05
+  author: Kaptein M. C. Åborg; personlig kommunikasjon
+  note: Personlig kommunikasjon via e-post
+
+MRR:
+  type: Article
+  title: Multi rolle radio
+  note: Ugradert kilde
+  url: 
+    value: https://no.wikipedia.org/wiki/Multi_rolle_radio
+    date: 2025-12-14
+
+MRR-ff:
+  type: Article
+  date: 2000-06-16
+  title: Verdens beste militære radio
+  note: Ugradert kilde
+  url:
+    value: https://www.tu.no/artikler/verdens-beste-militaere-radio/274894
+    date: 2025-12-17
+
+WER:
+  type: Article
+  title: Word Error Rate
+  date: 2025-07-31
+  url:
+    value: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/how-to-custom-speech-evaluate-data?pivots=ai-foundry-portal
+    date: 2025-12-17
+
+Lyd-SNL:
+  type: Article
+  date: 2024-11-26
+  title: lyd
+  publisher: Store norske leksikon
+  author: Truls Gjestland
+  url:
+    value: https://snl.no/lyd
+    date: 2025-12-08
+
+Sampling-SNL:
+  type: Article
+  date: 2025-02-21
+  title: sampling (elektronikk)
+  publisher: Store norske Leksikon
+  author: Ragnar Johnsen
+  url:
+    value: https://snl.no/sampling_-_elektronikk
+    date: 2025-12-14
+
+Digital_Lyd-SNL:
+  type: Article
+  date: 2024-11-26
+  title: digitalt signal
+  publisher: Store norske leksikon
+  author:  (Paul Bjørn Andersen, Gunnar Stette)
+  url:
+    value: https://snl.no/digitalt_signal
+    date: 2025-12-14
+
+TVB:
+  type: Web
+  title: Tactical Voice Bridge
+  publisher: Resilience Communications
+  url:
+    value: https://resiliencecomms.com/tvb/
+    date: 2025-11-20
+
+RCA:
+  type: Article
+  date: 2023-12-12
+  title: RCA-konnektor
+  publisher: Store norske leksikon
+  author: Knut Hofstad
+  url:
+    value: https://snl.no/RCA-konnektor
+    date: 2025-12-17
+
+
+Spectrogram:
+  type: Article
+  date: 2025-02-21
+  title: spektrogram
+  publisher: Store norske leksikon
+  author: Lars Egil Helseth
+  url:
+    value: https://snl.no/spektrogram
+    date: 2025-12-17
+

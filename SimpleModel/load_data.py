@@ -6,10 +6,17 @@ from glob import glob
 
 # --- KONFIGURASJON ---
 CACHE_DIR = "cache"
-FFT_SIZE = 4096
+
+# CNN windowing parameters (professor's recommendations)
+WINDOW_SIZE = 65536   # ~64k samples per window
+HOP_SIZE    = WINDOW_SIZE // 2   # 50% overlap → ~300 windows per file
+N_BANDS     = 32      # frequency partitions per window per band
+MAX_WINDOWS = 300     # pad / truncate each file to this many windows
 
 def get_cache_path(mode):
     """Genererer unikt filnavn for hver modus så de ikke overskriver hverandre."""
+    if mode == "cnn":
+        return os.path.join(CACHE_DIR, f"dronerf_dataset_cnn_w{WINDOW_SIZE}_b{N_BANDS}.npz")
     return os.path.join(CACHE_DIR, f"dronerf_dataset_{mode}.npz")
 
 # --- FIL-PARSING OG LASTING ---
@@ -32,9 +39,42 @@ def load_signal(path):
 
 # --- SIGNALBEHANDLING ---
 
-def fft(x):
+def _band_energies(window: np.ndarray) -> np.ndarray:
+    """Mean magnitude per frequency band for one window."""
+    spectrum = np.abs(np.fft.rfft(window * np.hanning(len(window)), n=WINDOW_SIZE))
+    n_bins = len(spectrum)
+    band_size = n_bins // N_BANDS
+    return np.array(
+        [spectrum[i * band_size : (i + 1) * band_size].mean() for i in range(N_BANDS)],
+        dtype=np.float32,
+    )
+
+
+def _extract_windows(L: np.ndarray, H: np.ndarray) -> np.ndarray:
+    """Sliding-window feature extraction → (n_windows, N_BANDS * 2)."""
+    n = min(len(L), len(H))
+    rows = []
+    start = 0
+    while start + WINDOW_SIZE <= n:
+        fl = _band_energies(L[start : start + WINDOW_SIZE])
+        fh = _band_energies(H[start : start + WINDOW_SIZE])
+        rows.append(np.concatenate([fl, fh]))
+        start += HOP_SIZE
+
+    if not rows:
+        # Signal shorter than one window — zero-pad
+        l_pad = np.zeros(WINDOW_SIZE, dtype=np.float32)
+        h_pad = np.zeros(WINDOW_SIZE, dtype=np.float32)
+        l_pad[:n] = L[:n]
+        h_pad[:n] = H[:n]
+        rows.append(np.concatenate([_band_energies(l_pad), _band_energies(h_pad)]))
+
+    return np.array(rows, dtype=np.float32)
+
+
+def fft_simple(x):
     x = x * np.hanning(len(x))
-    return np.abs(np.fft.rfft(x, n=FFT_SIZE))
+    return np.abs(np.fft.rfft(x, n=4096))
 
 def spectral_peaks(x, k=5):
     idx = np.argpartition(x, -k)[-k:]
@@ -42,15 +82,12 @@ def spectral_peaks(x, k=5):
     return x[idx], idx
 
 def extract_features(L, H, mode="mlp"):
-    fL = fft(L)
-    fH = fft(H)
-
     if mode == "cnn":
-        # Returnerer hele spekteret (ca 4098 verdier)
-        return np.concatenate([fL, fH])
+        return _extract_windows(L, H)
 
     if mode == "mlp":
-        # Returnerer kun utvalgte features (28 verdier)
+        fL = fft_simple(L)
+        fH = fft_simple(H)
         peaks_L, freqs_L = spectral_peaks(fL)
         peaks_H, freqs_H = spectral_peaks(fH)
 
@@ -86,15 +123,23 @@ def build_index(data_dir):
 
 def build_dataset(data_dir, mode="mlp"):
     samples, mode_map = build_index(data_dir)
-    X, y = [], []
+    X_list, y = [], []
 
     for label, l_path, h_path in samples:
         L, H = load_signal(l_path), load_signal(h_path)
         n = min(len(L), len(H))
-        X.append(extract_features(L[:n], H[:n], mode))
+        X_list.append(extract_features(L[:n], H[:n], mode))
         y.append(label)
 
-    return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64), mode_map
+    if mode == "cnn":
+        n_features = N_BANDS * 2
+        X_out = np.zeros((len(X_list), MAX_WINDOWS, n_features), dtype=np.float32)
+        for i, windows in enumerate(X_list):
+            n_w = min(len(windows), MAX_WINDOWS)
+            X_out[i, :n_w] = windows[:n_w]
+        return X_out, np.array(y, dtype=np.int64), mode_map
+
+    return np.array(X_list, dtype=np.float32), np.array(y, dtype=np.int64), mode_map
 
 # --- HOVEDFUNKSJON FOR LASTING ---
 

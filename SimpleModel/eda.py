@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 
 from load_data import load_or_build
 
@@ -42,9 +41,6 @@ def print_dataset_info(X, y, label_map=None, feature_names=None):
     print(df.describe().T.sort_values("std", ascending=False))
 
     print(df.columns)
-    #sns.pairplot(df, hue="label")
-    #plt.show()
-
 
 
 if __name__ == "__main__":

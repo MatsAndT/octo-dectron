@@ -6,11 +6,10 @@ from load_data import load_or_build
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.dummy import DummyClassifier
-from sklearn.decomposition import PCA
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -50,6 +49,20 @@ def filter_features(X_train, X_test, feature_names):
     X_test_filtered = df_test[kept_features].values
     
     return X_train_filtered, X_test_filtered, kept_features
+
+def run_dummy_classifier(X, y):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    dummy = DummyClassifier(strategy="most_frequent")
+    dummy.fit(X_train, y_train)
+
+    print("\n--- DUMMY CLASSIFIER (Most Frequent) ---")
+    print(f"Train Accuracy: {dummy.score(X_train, y_train):.4f}")
+    print(f"Test Accuracy:  {dummy.score(X_test, y_test):.4f}")
+    
+    return dummy
 
 def run_mlp_kitchen_sink(X, y):
     # Vi bruker alle originale features uten filtrering
@@ -161,9 +174,6 @@ def run_mlp_pipeline(X, y, feature_names):
     plt.tight_layout()
     plt.show()
 
-    dummy = DummyClassifier(strategy="most_frequent")
-    dummy.fit(X_train_filtered, y_train)
-    print(f"Baseline (tippe mest vanlig): {dummy.score(X_test_filtered, y_test):.2f}")
 
     return best_model, grid
 
@@ -173,6 +183,6 @@ if __name__ == "__main__":
 
     X, y, mode_map, feature_names = load_or_build(data_dir, mode="mlp")
 
-
+    run_dummy_classifier(X, y)
     run_mlp_kitchen_sink(X, y)
     model, grid = run_mlp_pipeline(X, y, feature_names)

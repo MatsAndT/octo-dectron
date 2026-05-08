@@ -11,6 +11,7 @@ dependencies = [
     "rarfile>=4.2",
     "scikit-learn>=1.4",
     "seaborn>=0.13.2",
+    "tensorflow>=2.21.0",
     "torch>=2.11.0",
 ]
 

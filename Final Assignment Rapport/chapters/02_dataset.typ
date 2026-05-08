@@ -56,99 +56,60 @@ For å hente ut frekvensinnholdet bruker vi Rask Fourier-transformasjon (FFT). D
 
 Dette betyr at vi ikke kan lese av et fysisk meningsfylt RF-spekter, men all frekvensinformasjon er likevel bevart i en konsistent form. For modellen er dette tilstrekkelig: den trenger ikke forstå den fysiske betydningen av frekvensene, kun at alle segmenter presenteres på nøyaktig samme måte under trening og testing — noe som er garantert siden alle opptak bruker identisk utstyr og format.
 
-For å utnytte informasjonen i frekvensspekteret best mulig, behandles inndataene ulikt avhengig av hvilken arkitektur som skal utføre klassifiseringen. For CNN-modellen velger vi å konkatenerere frekvensspekteret fra både det lave og høye båndet til én sammenhengende vektor. Logikken bak dette er at en CNN er spesialisert på å identifisere komplekse mønstre og hierarkiske sammenhenger i dataene. Ved å presentere hele det ubehandlede spekteret samlet, får modellen mulighet til å selv lære seg hvilke unike kombinasjoner av frekvenser og støysignaturer på tvers av de to båndene som er mest karakteristiske for hver enkelt dronemodus.
+For å utnytte informasjonen i frekvensspekteret best mulig, behandles inndataene ulikt avhengig av hvilken arkitektur som skal utføre klassifiseringen. Begge modellene benytter den samme grunnleggende signalrepresentasjonen: glidende vinduisering av råsignalet med en fast vindusstørrelse på 64 000 sampler og 50 % overlapping (stride = 32 000 sampler). Med 40 MHz samplingsfrekvens tilsvarer hvert vindu 1,6 millisekunder. For hvert vindu beregnes gjennomsnittlig magnitudeenergi per frekvensbånd ved hjelp av FFT, der 32 frekvensbånd fordeles jevnt over det positive frekvensspekteret fra 0 til 20 MHz. L- og H-båndet behandles som separate kanaler og gir til sammen 64 frekvensbånds-energier per vindu. Avhengig av opptakets lengde genereres mellom noen titalls og over 300 vinduer per fil; alle opptak paddes eller avkortes til nøyaktig 300 vinduer for å gi en uniform representasjon.
 
-For MLP-modellen er strategien derimot å forenkle inndataene gjennom målrettet feature-ekstraksjon. Siden en MLP ikke har den samme innebygde evnen som en CNN til å filtrere ut struktur fra store, støyfulle datasett, velger vi å trekke ut de fem mest dominerende spektrale toppene med tilhørende frekvensindekser fra hvert bånd. Disse toppene fungerer som en konsis signatur av dronens kommunikasjon, da de ofte korresponderer med de faktiske bærefrekvensene som brukes til kontroll og videooverføring. Ved i tillegg å inkludere statistiske mål som minimum, maksimum, gjennomsnitt og standardavvik, får modellen viktig kontekst om signalets generelle energinivå og varians. Dette virker som et hensiktsmessig, ikke for komplekst feature-sett for MLP på såpass kompleks og sammensatt data som RF-signalet er.
+For CNN-modellen presenteres sekvensen av 300 vinduer direkte som en todimensjonal tensoreinngang av form (300, 64). Modellen kan dermed selv oppdage temporale mønstre — endringer i frekvensprofilen over tid — uten at det kreves manuell feature-konstruksjon.
+
+For MLP-modellen reduseres de 300 vinduene til én flat feature-vektor ved hjelp av statistisk pooling. For hvert av de 64 frekvensbåndene beregnes tre statistikker på tvers av vinduene: gjennomsnitt, standardavvik og maksimum. Dette gir til sammen 192 egenskaper per opptak (64 bånd × 3 statistikker), som vist i @mlp_features_table. Gjennomsnittsverdien representerer den typiske frekvensprofilen for opptaket, standardavviket fanger temporal variasjon, og maksimum bevarer informasjon om toppenergi som et gjennomsnitt ville skjult.
 
 #figure(
-  caption: [Oversikt over de 28 originale trekkene (features) utvalgt for MLP-modellen],
+  caption: [Oversikt over de 192 egenskapene (features) for MLP-modellen, beregnet ved statistisk pooling av 300 frekvensbånds-energivinduer.],
   table(
     columns: (1fr, 1fr, 2fr),
     inset: 7pt,
     align: (left, left, left),
     stroke: 0.5pt + gray,
     fill: (x, y) => if y == 0 { gray.lighten(40%) },
-    
+
     [*Kategori*], [*Feature-navn*], [*Beskrivelse*],
-    
-    // Lavt bånd (L) - Topper
-    table.cell(rowspan: 2, align: horizon)[*Spektrale topper (L)*], 
-    [fL_peak1 -- fL_peak5], [Magnituden til de 5 største frekvenstoppene i lavt bånd.],
-    [fL_freq1 -- fL_freq5], [Frekvensindeksene (0--2047) til de 5 største toppene i lavt bånd.],
-    
-    // Høyt bånd (H) - Topper
-    table.cell(rowspan: 2, align: horizon)[*Spektrale topper (H)*], 
-    [fH_peak1 -- fH_peak5], [Magnituden til de 5 største frekvenstoppene i høyt bånd.],
-    [fH_freq1 -- fH_freq5], [Frekvensindeksene (0--2047) til de 5 største toppene i høyt bånd.],
-    
-    // Statistikk L
-    table.cell(rowspan: 4, align: horizon)[*Statistikk (L)*],
-    [fL_min], [Minimumsverdi i lavt bånd (støygulv).],
-    [fL_max], [Maksimumsverdi i lavt bånd],
-    [fL_mean], [Gjennomsnittlig energi i lavt bånd.],
-    [fL_std], [Standardavvik (spredning) i lavt bånd.],
-    
-    // Statistikk H
-    table.cell(rowspan: 4, align: horizon)[*Statistikk (H)*],
-    [fH_min], [Minimumsverdi i høyt bånd (støygulv).],
-    [fH_max], [Maksimumsverdi i høyt bånd],
-    [fH_mean], [Gjennomsnittlig energi i høyt bånd.],
-    [fH_std], [Standardavvik (spredning) i høyt bånd.],
+
+    table.cell(rowspan: 3, align: horizon)[*Lavt bånd (L), 32 bånd*],
+    [mean\_L\_band00 -- mean\_L\_band31], [Gjennomsnittlig energi per frekvensbånd over 300 vinduer.],
+    [std\_L\_band00 -- std\_L\_band31],  [Standardavvik per frekvensbånd — fanger temporal variasjon.],
+    [max\_L\_band00 -- max\_L\_band31],  [Maksimal energi per frekvensbånd — bevarer toppaktivitet.],
+
+    table.cell(rowspan: 3, align: horizon)[*Høyt bånd (H), 32 bånd*],
+    [mean\_H\_band00 -- mean\_H\_band31], [Gjennomsnittlig energi per frekvensbånd over 300 vinduer.],
+    [std\_H\_band00 -- std\_H\_band31],  [Standardavvik per frekvensbånd — fanger temporal variasjon.],
+    [max\_H\_band00 -- max\_H\_band31],  [Maksimal energi per frekvensbånd — bevarer toppaktivitet.],
   )
-) <original_features_table>
+) <mlp_features_table>
 
 
 == Eksplorativ Dataanalyse (EDA)
+
+Datasettet består av 227 opptak fordelt over fem klasser, som vist i @class_distribution_table. Klasse 0 er den største med 63 opptak, mens klasse 4 er den minste med 39. Denne ubalansen er moderat — den største klassen er om lag 1,6 ganger større enn den minste — men tilstrekkelig til at evaluering utelukkende basert på nøyaktighet kan gi et misvisende bilde av modellens ytelse. Av den grunn benyttes macro-F1 som primær evalueringsmetrikk, vektet slik at alle klasser teller likt.
+
 #figure(
-  caption: [Statistisk oversikt over utvalgte MLP-features (N=227). Tabellen viser de to mest dominerende frekvenstoppene, samt aggregert statistikk for båndene.],
+  caption: [Klassefordeling i DroneRF-datasettet (N = 227).],
   table(
-    columns: (auto, auto, auto, auto, auto, auto, auto, auto),
-    inset: 5pt,
-    align: (left, right, right, right, right, right, right, right),
-    stroke: none,
-    fill: (x, y) => if y == 0 { gray.lighten(50%) } else if calc.even(y) { gray.lighten(90%) },
-    
-    // Header
-    [*Feature*], [*Mean*], [*Std*], [*Min*], [*25%*], [*50%*], [*75%*], [*Max*],
-    
-    // Frekvensindekser (Kun 1 og 2)
-    table.cell(colspan: 8, [*Frekvensindekser (Indeks 0-2048)*]),
-    [fL_freq1], [625.45], [286.61], [0.0], [512.0], [512.0], [512.0], [2048.0],
-    [fH_freq1], [615.56], [332.67], [0.0], [512.0], [512.0], [512.0], [2048.0],
-    [fL_freq2], [1122.74], [671.55], [0.0], [513.0], [1130.0], [1821.0], [2048.0],
-    [fH_freq2], [1072.98], [772.97], [0.0], [214.5], [1164.0], [1801.5], [2048.0],
-    
-    // Topper (Kun 1 og 2)
-    table.cell(colspan: 8, [*Spektrale topper (Magnitude)*]),
-    [fL_peak1], [0.0382], [0.1477], [0.0004], [0.0005], [0.0006], [0.0006], [0.9372],
-    [fH_peak1], [0.0011], [0.0030], [0.0004], [0.0005], [0.0005], [0.0006], [0.0313],
-    [fL_peak2], [0.0340], [0.1309], [0.0003], [0.0003], [0.0004], [0.0004], [0.9180],
-    [fH_peak2], [0.0009], [0.0028], [0.0003], [0.0004], [0.0004], [0.0004], [0.0270],
-    
-    // Aggregert statistikk
-    table.cell(colspan: 8, [*Aggregerte statistikker (Amplitude/Energi)*]),
-    [fL_max],   [0.0382], [0.1477], [0.0004], [0.0005], [0.0006], [0.0006], [0.9372],
-    [fH_max],   [0.0011], [0.0030], [0.0004], [0.0005], [0.0005], [0.0006], [0.0313],
-    [fL_mean],  [0.0035], [0.0127], [0.0001], [0.0001], [0.0001], [0.0001], [0.0813],
-    [fH_mean],  [0.0002], [0.0004], [0.0001], [0.0001], [0.0001], [0.0001], [0.0040],
-    [fL_std],   [0.0049], [0.0185], [0.0001], [0.0001], [0.0001], [0.0001], [0.1130],
-    [fH_std],   [0.0001], [0.0004], [0.0000], [0.0001], [0.0001], [0.0001], [0.0043],
-    [fL_min],   [0.0000], [0.0001], [0.0000], [0.0000], [0.0000], [0.0000], [0.0005],
-    [fH_min],   [0.0000], [0.0000], [0.0000], [0.0000], [0.0000], [0.0000], [0.0000],
+    columns: (auto, auto, auto, auto),
+    inset: 7pt,
+    align: (center, left, center, center),
+    stroke: 0.5pt + gray,
+    fill: (x, y) => if y == 0 { gray.lighten(40%) },
+    [*Klasse*], [*Dronemodus (BUI-kode)*], [*Antall opptak*], [*Andel*],
+    [0], [Påslått og tilkoblet (00)], [63], [27,8 %],
+    [1], [Automatisk svev (01)], [41], [18,1 %],
+    [2], [Flyging uten video (10)], [42], [18,5 %],
+    [3], [Flyging med video (11)], [42], [18,5 %],
+    [4], [Bakgrunn (ingen drone)], [39], [17,2 %],
   )
-) <feature_stats_filtered>
+) <class_distribution_table>
 
-En nærmere analyse av dataene valgt ut for MLP gir viktig innsikt i signalenes natur og hvordan de bør behandles før de introduseres for MLP-modellen. Et sentralt teknisk poeng er forholdet mellom den valgte FFT-størrelsen og de resulterende frekvensindeksene. Selv om vi har definert en FFT-størrelse på 4096 i koden, ser vi at frekvensindeksene kun strekker seg opp til 2048. Dette er en direkte konsekvens av at vi benytter en transformasjon av reelle signaler (rFFT). Siden inngangssignalet ikke har en imaginær del, blir det positive og negative frekvensspekteret symmetrisk. Algoritmen returnerer derfor kun den første halvparten av spekteret, N/2, som representerer de unike frekvenskomponentene fra 0 opp til Nyquist-frekvensen. Dette er tilstrekkelig for vår analyse, da all relevant informasjon for å skille mellom dronemodusene er bevart i disse 2048 indeksene.
+Et viktig teknisk poeng ved frekvensbånds-representasjonen er bruken av reell FFT (rFFT). Siden CSV-filene kun inneholder den reelle delen av signalet — uten imaginær IQ-komponent — brettes de negative frekvensene over til den positive siden i FFT-resultatet. Det resulterende basebånd-frekvensspekteret strekker seg fra 0 til 20 MHz, og de 32 frekvensbåndene fordeles jevnt over dette området. Selv om vi dermed ikke kan rekonstruere det fysiske RF-spekteret, er frekvensinformasjonen bevart i en konsistent form på tvers av alle opptak, noe som er tilstrekkelig for klassifisering.
 
-Når vi studerer statistikken for de ulike trekkene, ser vi en tydelig diktometri i dataene. Frekvensindeksene opererer på en lineær skala mellom 0 og 2048, mens de spektrale magnitudene (peaks) og statistiske målene som gjennomsnitt og standardavvik ofte har ekstremt lave verdier, gjerne i størrelsesorden $10^(−4)$ til $10^(−5)$. Den lave standardavviket i mange av de statistiske trekkene, spesielt for det høye båndet (H), indikerer at mye av dataene består av bakgrunnsstøy med svært liten varians. Samtidig ser vi i kolonnene for maksimalverdier at enkelte opptak har betydelig høyere utslag. Dette betyr at informasjonen modellen skal lære av er svært spredt altså at de viktige signalene fremstår som sjeldne topper i et ellers flatt og konsistent støygulv.
-
-Denne enorme forskjellen i tallverdier, fra tusener i frekvensindekser til brøkdeler i magnitude, gjør det tvingende nødvendig å benytte en StandardScaler før MLP-trening. Uten en slik standardisering, der hver feature transformeres til å ha null i gjennomsnitt og en standardavvik på én, vil modellen i praksis ignorere de spektrale magnitudene og kun legge vekt på frekvensindeksene fordi disse har numerisk størst påvirkning på vektene i nettverket. Ved å skalere dataene sikrer vi at de subtile forskjellene i signalstyrke og støygulv får like stor betydning i beslutningsprosessen som de dominerende frekvensene.
-
-Til slutt viser den statistiske oversikten at det finnes redundans i det nåværende settet av features som med fordel kan fjernes for å effektivisere modellen. For eksempel ser vi at fL_max og fL_peak1 er identiske (og tilsvarende for H-båndet) i alle statistiske mål, noe som er logisk siden den største spektrale toppen per definisjon også er signalets maksimalverdi. Å beholde begge bidrar ikke med ny informasjon, men øker dimensjonaliteten unødvendig.
-
-Videre viser analysen at features som fL_min og fH_min har et ekstremt lav standardavvik og varians. Dette indikerer at verdiene er tilnærmet konstante på tvers av alle opptakene, og dermed ikke inneholder diskriminerende informasjon som modellen kan bruke til å skille mellom de ulike dronene eller modusene. At disse verdiene er så flate, betyr at de i praksis kun representerer et statisk støygulv.
-
-Dette var sammenhenger som ikke ble innsett i den initielle utvelgelsen av features, men som ble åpenbare gjennom EDA, noe som understreker nytten av en slik statistisk gjennomgang. En seleksjonsprosess hvor vi fjerner duplikater som maksimalverdier, samt filtrerer ut trekk med aller lavest varians som minimumsverdier, vil gjøre MLP-modellen mer robust mot overfitting og raskere å trene, ettersom den får et renere og mer destillert bilde av de faktiske RF-signaturene.
+Frekvensbånds-energiene har svært lave absoluttverdier, typisk i størrelsesorden $10^(-4)$ til $10^(-3)$, og energifordelingen varierer betydelig mellom opptakene. Enkelte opptak viser kraftige toppverdier som avviker markant fra medianen, særlig i lavfrekvensbåndet (L). Denne utliggerprofilen gjør RobustScaler — som normaliserer basert på median og interkvartilspredning — til et mer egnet valg enn StandardScaler for MLP-modellen, siden StandardScaler er sensitiv overfor slike energitopper.
 
 
 == Train/test-splitt
@@ -161,8 +122,10 @@ I vår implementasjon bruker vi en fast random seed for å gjøre splitten repro
 
 == Forbehandling
 
-Før modelltrening måtte RF-dataene forbehandles. Først ble råfilene lest inn og koblet til riktige labels basert på BUI-koden i filnavnet. Deretter ble signalene delt inn i mindre vinduer. For MLP-modellen ble hvert vindu omgjort til en feature-vektor. Disse feature-vektorene ble standardisert før trening, slik at features med stor numerisk skala ikke skulle dominere læringen.
+Før modelltrening ble råfilene lest inn og koblet til korrekte klasser basert på BUI-koden i filnavnet. For hvert opptak ble L- og H-signalene prosessert med den samme glidende vinduesfunksjonen: vindusstørrelse 64 000 sampler, 50 % overlapping. Fra hvert vindu beregnes 64 frekvensbånds-energier (32 per kanal) via rFFT med Hanning-vindusvekting for å redusere spektral lekkasje. Alle opptak paddes eller avkortes til nøyaktig 300 vinduer.
 
-For CNN-modellen ble råsignalet bevart i større grad. Lavt og høyt frekvensbånd ble representert som to separate kanaler, slik at modellen kunne lære mønstre på tvers av begge mottakerbåndene. Signalene ble tilpasset en fast sekvenslengde ved å kutte eller fylle med nuller der det var nødvendig. I tillegg ble signalene normalisert basert på statistikk fra treningssettet, slik at modellen fikk mer stabile inputverdier.
+For CNN-modellen presenteres de 300 vinduene direkte som en (300, 64)-tensor. Normalisering utføres per opptak ved å dele på den største absoluttverdien i tensoren, noe som sikrer at inngangsverdiene er i området [−1, 1] uten å endre relative forskjeller mellom frekvensbåndene.
 
-Denne forbehandlingen gjør datasettet egnet for to ulike modelltyper: MLP, som lærer fra konstruerte feature-vektorer, og CNN, som lærer direkte fra strukturen i råsignalet.
+For MLP-modellen aggregeres de 300 vinduene til én flat vektor med 192 egenskaper ved beregning av gjennomsnitt, standardavvik og maksimum per frekvensbånd. Denne vektoren normaliseres med RobustScaler, tilpasset eksklusivt til treningssettet, for å unngå datalekkasje fra testsettet.
+
+Klasseubalansen håndteres ved frekvensbasert prøvevekting: for MLP sendes beregnede sample-vekter (compute_sample_weight) til MLPClassifier under trening, og for CNN benyttes tilsvarende klassevekter (class_weight) i Keras. Begge metodene øker den effektive innflytelsen til de mindre representerte klassene under gradientoppdateringene uten å endre datasettets sammensetning.

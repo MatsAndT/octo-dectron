@@ -5,12 +5,13 @@ import pandas as pd
 import pytest
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
 from cnn import (
 	DroneCNNMultiTask,
 	build_arg_parser,
 	compute_class_weights,
+	compute_sample_weights,
 	evaluate_model,
 	make_multitask_loader,
 	parse_conv_channels,
@@ -43,6 +44,16 @@ def test_auto_test_flag_parsing() -> None:
 
 	disabled_args = parser.parse_args(["--no-auto-test"])
 	assert disabled_args.auto_test is False
+
+
+def test_balanced_train_sampler_flag_parsing() -> None:
+	parser = build_arg_parser()
+
+	default_args = parser.parse_args([])
+	assert default_args.balanced_train_sampler is True
+
+	disabled_args = parser.parse_args(["--no-balanced-train-sampler"])
+	assert disabled_args.balanced_train_sampler is False
 
 
 def test_window_feature_flags_parsing() -> None:
@@ -153,6 +164,32 @@ def test_compute_class_weights_inverse_frequency() -> None:
 	assert weights.shape == (2,)
 	assert torch.isclose(weights[0], torch.tensor(2.0 / 3.0), atol=1e-6)
 	assert torch.isclose(weights[1], torch.tensor(2.0), atol=1e-6)
+
+
+def test_compute_sample_weights_inverse_frequency() -> None:
+	y = np.array([0, 0, 0, 1], dtype=np.int64)
+	sample_weights = compute_sample_weights(y=y, num_classes=2)
+
+	assert sample_weights.shape == (4,)
+	assert sample_weights[3] > sample_weights[0]
+
+
+def test_make_multitask_loader_uses_weighted_sampler() -> None:
+	X = np.zeros((6, 2, 8), dtype=np.float32)
+	y_family = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+	y_mode = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
+	sample_weights = np.array([1.0, 1.0, 1.0, 2.0, 2.0, 2.0], dtype=np.float64)
+
+	loader = make_multitask_loader(
+		X=X,
+		y_family=y_family,
+		y_mode=y_mode,
+		batch_size=2,
+		shuffle=True,
+		sample_weights=sample_weights,
+	)
+
+	assert isinstance(loader.sampler, WeightedRandomSampler)
 
 
 def test_evaluate_model_with_empty_loader_returns_zero_metrics() -> None:

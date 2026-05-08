@@ -59,7 +59,6 @@ def main():
 
     print("Unike labels:", np.unique(y))
     print("Fordeling:", np.bincount(y))
-    exit()
 
     num_classes = len(np.unique(y))
     print("Class distribution:", np.bincount(y))
@@ -113,8 +112,15 @@ def main():
     # 🔧 Treningsdata + augmentering
     # -------------------------
     def data_generator(X, y, class_weights, batch_size=16):
+        classes = np.array(sorted(class_weights.keys()), dtype=np.int64)
+        class_indices = {label: np.where(y == label)[0] for label in classes}
+
         while True:
-            idx = np.random.randint(0, len(X), batch_size)
+            sampled_labels = np.random.choice(classes, size=batch_size, replace=True)
+            idx = np.array(
+                [np.random.choice(class_indices[label]) for label in sampled_labels],
+                dtype=np.int64,
+            )
             batch_x = X[idx]
             batch_y = y[idx]
 

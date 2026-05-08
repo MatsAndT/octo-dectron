@@ -15,7 +15,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
-from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
+from torch.utils.data import DataLoader, TensorDataset
 
 from data.data import load_dronerf_dataframe
 from mlp_infra import build_metrics_payload
@@ -299,30 +299,12 @@ def make_multitask_loader(
 	y_mode: np.ndarray,
 	batch_size: int,
 	shuffle: bool,
-	*,
-	sample_weights: np.ndarray | None = None,
 ) -> DataLoader:
 	features = torch.tensor(X, dtype=torch.float32)
 	targets_family = torch.tensor(y_family, dtype=torch.long)
 	targets_mode = torch.tensor(y_mode, dtype=torch.long)
 	dataset = TensorDataset(features, targets_family, targets_mode)
-
-	sampler: WeightedRandomSampler | None = None
-	if sample_weights is not None:
-		if sample_weights.shape[0] != features.shape[0]:
-			raise ValueError("sample_weights must match number of samples")
-		sampler = WeightedRandomSampler(
-			weights=torch.tensor(sample_weights, dtype=torch.double),
-			num_samples=features.shape[0],
-			replacement=True,
-		)
-
-	return DataLoader(
-		dataset,
-		batch_size=batch_size,
-		shuffle=shuffle and sampler is None,
-		sampler=sampler,
-	)
+	return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
 def compute_class_weights(
@@ -338,17 +320,6 @@ def compute_class_weights(
 	weights[non_zero] = counts.sum() / (num_classes * counts[non_zero])
 
 	return torch.tensor(weights, dtype=torch.float32, device=device)
-
-
-def compute_sample_weights(
-	y: np.ndarray,
-	num_classes: int,
-) -> np.ndarray:
-	counts = np.bincount(y, minlength=num_classes).astype(np.float64)
-	class_weights = np.zeros(num_classes, dtype=np.float64)
-	non_zero = counts > 0
-	class_weights[non_zero] = 1.0 / counts[non_zero]
-	return class_weights[y]
 
 
 class DroneCNNMultiTask(nn.Module):
@@ -753,11 +724,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 		default=True,
 	)
 	parser.add_argument(
-		"--balanced-train-sampler",
-		action=argparse.BooleanOptionalAction,
-		default=True,
-	)
-	parser.add_argument(
 		"--deterministic",
 		action=argparse.BooleanOptionalAction,
 		default=False,
@@ -834,20 +800,12 @@ def main() -> None:
 		normalize_signals=args.normalize_signals,
 	)
 
-	train_sample_weights: np.ndarray | None = None
-	if args.balanced_train_sampler:
-		train_sample_weights = compute_sample_weights(
-			prepared.y_mode_train,
-			NUM_CLASSES_BY_HEAD["mode"],
-		)
-
 	train_loader = make_multitask_loader(
 		prepared.X_train,
 		prepared.y_family_train,
 		prepared.y_mode_train,
 		batch_size=args.batch_size,
 		shuffle=True,
-		sample_weights=train_sample_weights,
 	)
 	test_loader = make_multitask_loader(
 		prepared.X_test,

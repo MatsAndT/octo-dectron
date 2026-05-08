@@ -104,7 +104,6 @@ uv run python cnn.py --device mps
 - `--family-loss-weight`: weight for family head loss (default: `1.0`)
 - `--mode-loss-weight`: weight for mode head loss (default: `1.0`)
 - `--use-class-weights` / `--no-use-class-weights`
-- `--balanced-train-sampler` / `--no-balanced-train-sampler`: inverse-frequency mode sampling in training batches (default: enabled)
 - `--auto-test` / `--no-auto-test`: run final evaluation and save test artifacts
 
 ### Runtime and Reproducibility

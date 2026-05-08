@@ -112,11 +112,11 @@ def main():
     # 🔧 Treningsdata + augmentering
     # -------------------------
     def data_generator(X, y, class_weights, batch_size=16):
-        classes = np.array(sorted(class_weights.keys()), dtype=np.int64)
-        class_indices = {label: np.where(y == label)[0] for label in classes}
+        class_labels = np.array(sorted(class_weights.keys()), dtype=np.int64)
+        class_indices = {label: np.where(y == label)[0] for label in class_labels}
 
         while True:
-            sampled_labels = np.random.choice(classes, size=batch_size, replace=True)
+            sampled_labels = np.random.choice(class_labels, size=batch_size, replace=True)
             idx = np.array(
                 [np.random.choice(class_indices[label]) for label in sampled_labels],
                 dtype=np.int64,

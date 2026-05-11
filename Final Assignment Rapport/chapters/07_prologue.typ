@@ -1,1 +1,0 @@
-= Forord<Takk>

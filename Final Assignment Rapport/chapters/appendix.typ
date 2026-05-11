@@ -6,8 +6,7 @@
 
 
 #show: appendix
-#align(center + horizon)[[Denne siden er blank med hensikt]]
-#pagebreak()
+
 
 = Vedlegg A — Dataloader
 ```python

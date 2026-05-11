@@ -13,12 +13,7 @@
 ) = {
 
    set page(
-  header: [
-    #text(fill: rgb("00AA00"))[
-      #h(1fr)
-      /**UGRADERT**/
-    ]
-  ]
+  header: context align(right, [#image("./UGRADERT.png", width: 20%)])
 )
   
   show figure.where(
@@ -53,9 +48,9 @@
   ]
 
   v(15pt)
-  align(center)[#h(1fr) Stian Sivertsen Loddengaard#h(1fr) Robert Brenner Marthins#h(1fr) Adrianne Bendiksen#h(1fr)]
+  align(center)[#h(1fr) Adrianne Bendiksen#h(1fr) Stian Sivertsen Loddengaard#h(1fr) Robert Brenner Marthins#h(1fr)]
   v(15pt)
-  align(center)[#h(1fr)  Mats Andreas Tønnesland#h(1fr) Mads Trøen#h(1fr) Nils Christian Halvorsen Wikstrøm#h(1fr)]
+  align(center)[#h(1fr)  Mads Trøen#h(1fr) Mats Andreas Tønnesland#h(1fr) Nils Christian Halvorsen Wikstrøm#h(1fr)]
   v(15pt)
 
 
@@ -74,7 +69,7 @@
     \
     \
     \
-    Words: 1\
+    Antall ord: #doc-total-words\
     \
     \
   ]
@@ -109,15 +104,7 @@
     counter(page).update(1)
 
   align(left)[
-    = Midlertidig notater for skriving:
-    - Plan for prosjektet som sendt til Øystein:
- 
-Vi har delt inn i to grupper. En gruppe har hovedfokus på skriving. Den andre gruppen har hovedfokus på programmering. Disse gruppene overlapper litt med tanke på at skrivegruppen må ha forståelse for hva som foregår på kodesiden og motsatt. Vi deler opp på denne måten for å unngå for mange conflicts på GitHub, og for at alle skal få noe å gjøre.
 
-Vi planlegger å bruke og sammenlignge klassifisering med MLP og CNN. Vi kommer til å starte med å lese igjennom det vi har fått av ressurser slik at alle har en grunnleggende forståelse av hva vi skal jobbe med. Deretter skal vi utvide denne forståelsen ved å visualisere og forstå datasettet vi har fått. Vi bruker felles dokument for skriving og felles GitHub-res slik at alle kan holde seg oppdatert og forstå hvor vi er i løypa
-    - Vi har bestemt oss for å forsøke å klassifisere basert dronen sin modus, ikke dronetype.
-      - Her har vi sikkert en del å yappe om på diskusjon. Hvorfor er det lurt? Hva kan være bakdelen? Er det mulighet for fremtidig arbeid som kan finne ut av type OG modus
-    #pagebreak()
     
     *Sammendrag* \
       #abstract \
@@ -128,10 +115,6 @@ Vi planlegger å bruke og sammenlignge klassifisering med MLP og CNN. Vi kommer 
     numbering: "i"
     )
     counter(page).update(2)
-
-  pagebreak()
-
-  include "chapters/07_prologue.typ"
 
   pagebreak()
   

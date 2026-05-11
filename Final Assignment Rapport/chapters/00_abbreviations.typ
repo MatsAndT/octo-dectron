@@ -2,14 +2,26 @@
 
 \
 
-*abbr* = abbreviation
+*BUI* = Bit Unique Identifier
 
 *CNN* = Convolutional Neural Networks
 
+*CSV* = Comma-Separated Values
+
 *EDA* = Eksplorativ dataanalyse
 
-*MLP* = Multilayer Perception
+*FFT* = Fast Fourier Transform
+
+*GHz* = Gigahertz
 
 *H/L RF* = Høy/Lav radiofrekvens
 
-*ver* = version
+*Hz* = Hertz
+
+*IQ-data* = In-phase/quadrature
+
+*MLP* = Multilayer Perception
+
+*MHz* = Megahertz
+
+*rFFT* = real Fast Fourier Transform

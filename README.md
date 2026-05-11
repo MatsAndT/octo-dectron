@@ -1,80 +1,69 @@
 # octo-dectron
-Computer program to estimate what kind of drones are in the area, based on RX/TX communication.
 
-## DEV
-1. Install UV and run uv sync
+Classifies drone operating mode from RF signals using the [DroneRF dataset](https://ieee-dataport.org/open-access/dronerf). Two models are compared: an MLP operating on aggregated frequency-band statistics, and a 1D-CNN operating directly on windowed frequency sequences.
+
+## Results
+
+| Model | Test accuracy | Macro-F1 |
+|---|---|---|
+| Dummy Classifier (baseline) | 28.26 % | 0.09 |
+| MLP (GridSearchCV) | 82.61 % | 0.82 |
+| CNN (~11k params) | 71.74 % | 0.66 |
+
+## Project structure
+
+```
+.
+├── load_data.py        # Signal loading, windowing, FFT feature extraction, caching
+├── mlp.py              # MLP training: pooling, dummy baseline, GridSearchCV
+├── cnn.py              # CNN training: model definition, normalisation, training loop
+├── cache/              # Cached .npz datasets (auto-generated, do not commit)
+└── Final Assignment Rapport/   # Typst report source
+```
+
+## How it works
+
+Raw DroneRF CSV files contain 10 million real-valued samples per file. The pipeline:
+
+1. **Windowing** — each recording is split into overlapping windows of 65 536 samples (50 % hop), yielding ~300 windows per file.
+2. **FFT** — each window is transformed via rFFT with a Hanning taper. The spectrum is divided into 32 frequency bands per channel (L and H), giving 64 band energies per window.
+3. **MLP path** — the 300 windows are pooled to a flat 192-feature vector (mean + std + max per band). Features are scaled with `RobustScaler` fit on training data only.
+4. **CNN path** — the (300, 64) matrix is fed directly to the model. Per-sample max-normalisation is applied.
+
+## Setup
+
+Requires Python ≥ 3.13 and [uv](https://github.com/astral-sh/uv).
+
 ```bash
 uv sync
 ```
-2. Install DroneRF from [https://data.mendeley.com/datasets/f4c2b4n755/1](https://data.mendeley.com/datasets/f4c2b4n755/1) and unzip the file. Put it in data/ and call it `DroneRF`
 
-## DroneRF Loader
+## Data
 
-Use the loader in [data/data.py](data/data.py) to extract `.rar` files and build a training-ready DataFrame. You need to first download the DroneRF datasett from 
+Download the DroneRF dataset and place it in a `.DroneRF/` folder at the project root. The expected filename pattern is `<BUI><band>_<segment>.csv`, e.g. `10000L_0.csv`.
 
-```python
-from data.data import load_dronerf_dataframe, dataframe_to_numpy
+The first run builds a cached `.npz` file in `cache/`. Subsequent runs load from cache.
 
-# 1) Load and extract DroneRF archives into a feature DataFrame
-df = load_dronerf_dataframe()
+## Running
 
-# 2) Convert to NumPy arrays for sklearn/Keras training
-arrays = dataframe_to_numpy(df, target_column="target_family", test_size=0.2)
-X_train, y_train = arrays["X_train"], arrays["y_train"]
-X_test, y_test = arrays["X_test"], arrays["y_test"]
-```
-
-### Label Targets
-
-- `target_binary`: background vs drone
-- `target_family`: background, bebop, ar, phantom
-- `target_mode`: fine-grained 10-class label from DroneRF code
-
-### Optional PyTorch
-
-```python
-from data.data import load_dronerf_dataframe, dataframe_to_torch_dataloader
-
-df = load_dronerf_dataframe()
-loader = dataframe_to_torch_dataloader(df, target_column="target_family", batch_size=32)
-```
-
-Install optional PyTorch support manually:
+**MLP** (trains dummy baseline + GridSearchCV MLP, prints results, shows confusion matrix):
 
 ```bash
-pip install torch
+uv run python mlp.py
 ```
 
-## CNN Multitask Trainer
-
-Train one CNN model that predicts both drone family and drone mode from raw H/L DroneRF signals.
-
-Quick run:
+**CNN** (trains model, saves `learning_curves.png`, shows confusion matrix):
 
 ```bash
-uv run python cnn.py --epochs 3 --batch-size 16 --max-values-per-archive 50000 --device auto --auto-test
+uv run python cnn.py
 ```
 
-Full guide:
+## Dependencies
 
-- [docs/cnn-trainer-guide.md](docs/cnn-trainer-guide.md)
-
-## Model Performance Visualization
-
-Use the visualization script to view CNN/MLP accuracy, macro F1, loss, train vs test comparisons, and confusion matrices.
-
-Run with defaults (family + mode, include test metrics):
-
-```bash
-uv run Visualization/model_performance.py
-```
-
-Common options:
-
-```bash
-# Only family target
-uv run Visualization/model_performance.py --targets family
-
-# Skip test metrics and confusion matrices
-uv run Visualization/model_performance.py --no-test --no-confusion
-```
+| Package | Purpose |
+|---|---|
+| `numpy` | Array operations, FFT |
+| `scikit-learn` | MLP, GridSearchCV, metrics, preprocessing |
+| `tensorflow` | 1D-CNN model |
+| `matplotlib` | Plots and confusion matrices |
+| `pandas` / `seaborn` | Exploratory data analysis |

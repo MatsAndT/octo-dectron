@@ -156,17 +156,6 @@ def run_dummy(X, y):
     print(f"Dummy test macro-F1 : {f1_score(y_test, dummy.predict(X_test), average='macro', zero_division=0):.4f}")
 
 
-def run_kitchen_sink(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y)
-    pipe = Pipeline([
-        ("scaler", RobustScaler()),
-        ("mlp", MLPClassifier(hidden_layer_sizes=(256, 128), alpha=0,
-                              max_iter=2000, random_state=42)),
-    ])
-    pipe.fit(X_train, y_train)
-    print(f"Kitchen Sink train: {pipe.score(X_train, y_train):.4f}  test: {pipe.score(X_test, y_test):.4f}")
-
 
 def run_mlp(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -205,7 +194,6 @@ if __name__ == "__main__":
     X_3d, y, label_map, _ = load_or_build(data_dir, mode="cnn")
     X = pool_windows(X_3d)
     run_dummy(X, y)
-    run_kitchen_sink(X, y)
     run_mlp(X, y)
 ```
 

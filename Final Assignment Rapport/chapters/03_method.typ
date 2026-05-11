@@ -1,5 +1,5 @@
 = Metode <Design>
-For at klassefordelingen skal bevares i begge settene, deles dataene 80/20 med stratifisert splitting. Som baseline brukes en Dummy Classifier (mest-hyppig-strategi) og en uregulert "kitchen sink"-modell. To modeller sammenlignes: MLP på sammensatte frekvens-statistikker og CNN på vindusekvenser.
+For at klassefordelingen skal bevares i begge settene, deles dataene 80/20 med stratifisert splitting. Som baseline brukes en Dummy Classifier (mest-hyppig-strategi). To modeller sammenlignes: MLP på sammensatte frekvens-statistikker og CNN på vindusekvenser.
 
 == Signalrepresentasjon og vindusvalg
 Hvert opptak segmenteres i glidende vinduer på 64 000 sampler med 50 % overlapping, noe som gir om lag 300 vinduer per fil. Vinduestørrelsen på 64 000 sampler er et kompromiss: kortere vinduer gir finere tidsoppløsning men svakere frekvensoppløsning (og mer støy i FFT-estimatene), mens lengre vinduer gir det motsatte. Med 40 MHz samplingsfrekvens svarer 64 000 sampler til 1,6 ms — tilstrekkelig til å fange én full RF-ramme fra dronen. 50 % overlapping gir nok vinduer til at statistiske estimater over sekvensen blir stabile.

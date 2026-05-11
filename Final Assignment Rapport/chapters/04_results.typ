@@ -2,7 +2,7 @@
 
 == MLP
 
-Eksperimentene med Multi-Layer Perceptron (MLP) ble utført på et datasett bestående av 227 opptak fordelt over fem dronemoduser (0–4), med en klassefordeling på henholdsvis 63, 41, 42, 42 og 39 opptak per klasse. Hvert opptak ble representert som en flat feature-vektor med 192 egenskaper, beregnet ved å sammenstille 300 frekvensbånds-vinduer med statistiske verdier (gjennomsnitt, standardavvik og maksimum per band). For å etablere en grunnlinje ble det først kjørt en Dummy Classifier basert på mest-hyppig-strategi, som oppnådde en testnøyaktighet på 28,26 % og en macro-F1 på 0,09. En uregulert "Kitchen Sink"-modell viste en treningsnøyaktighet på 100 %, men falt til 84,78 % på testsettet, noe som indikerer at modellen memorerte treningsdataene fremfor å generalisere.
+Eksperimentene med Multi-Layer Perceptron (MLP) ble utført på et datasett bestående av 227 opptak fordelt over fem dronemoduser (0–4), med en klassefordeling på henholdsvis 63, 41, 42, 42 og 39 opptak per klasse. Hvert opptak ble representert som en flat feature-vektor med 192 egenskaper, beregnet ved å sammenstille 300 frekvensbånds-vinduer med statistiske verdier (gjennomsnitt, standardavvik og maksimum per band). For å etablere en grunnlinje ble det først kjørt en Dummy Classifier basert på mest-hyppig-strategi, som oppnådde en testnøyaktighet på 28,26 % og en macro-F1 på 0,09.
 
 Ved bruk av GridSearchCV med 5-fold stratifisert kryssvalidering og macro-F1 som scoringsmetrikk ble den beste modellen identifisert med ett skjult lag med 64 nevroner, regulariseringsparameter α = 1,0 og læringsrate 0,001. Denne konfigurasjonen oppnådde en CV macro-F1 på 0,85, en treningsnøyaktighet på 98,90 % og en testnøyaktighet på 82,61 %, med en test macro-F1 på 0,82, som også kan indikere en form for overfitting. @tab-mlp-report oppsummerer per-klasse-ytelsen:
 
@@ -93,7 +93,7 @@ Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klas
 
 == Sammenligning alle modeller
 
-@tab-model-comparison oppsummerer testnøyaktighet og macro-F1 for alle fire modeller, og @Kitchen_confusion viser forvirringsmatrisen for Kitchen Sink-modellen.
+@tab-model-comparison oppsummerer testnøyaktighet og macro-F1 for alle tre modeller.
 
 #figure(
   table(
@@ -103,19 +103,13 @@ Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klas
       [*Modell*], [*Testnøyaktighet*], [*Macro-F1*],
     ),
     [Dummy Classifier], [28,26 %], [0,09],
-    [Kitchen Sink MLP], [84,78 %], [0,85],
     [MLP (GridSearchCV)], [82,61 %], [0,82],
     [CNN (~11k param)], [71,74 %], [0,66],
   ),
   caption: [Sammenligning av alle modeller på testsettet (N = 46).]
 ) <tab-model-comparison>
 
-#figure(
-  image("../img/Kitchen Sink.png", width: 70%),
-  caption: [Forvirringsmatrise for Kitchen Sink-modellen på testsettet.]
-) <Kitchen_confusion>
-
-Rangeringen etter nøyaktighet er Kitchen Sink (84,78 %) \> MLP (82,61 %) \> CNN (71,74 %) \> Dummy (28,26 %). Etter macro-F1 er bildet det samme: Kitchen Sink (0,85) \> MLP (0,82) \> CNN (0,66) \> Dummy (0,09). Kitchen Sink er altså øverst på begge mål, til tross for 100 % treningsnøyaktighet og ingen regularisering — et resultat som krever nærmere forklaring og som drøftes i kapittel 5.
+MLP (82,61 %) gjør det klart bedre enn CNN (71,74 %), og begge slår Dummy Classifier (28,26 %) med god margin. Etter macro-F1 er bildet det samme: MLP (0,82) \> CNN (0,66) \> Dummy (0,09). MLP er dermed den beste modellen på begge mål.
 
 == Begrensninger
 

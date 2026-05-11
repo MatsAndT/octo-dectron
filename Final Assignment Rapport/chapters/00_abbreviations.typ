@@ -20,8 +20,14 @@
 
 *IQ-data* = In-phase/quadrature
 
+*LSTM* = Long Short-Term Memory
+
 *MLP* = Multilayer Perception
 
 *MHz* = Megahertz
 
 *rFFT* = real Fast Fourier Transform
+
+*RNN* = Rekurrente nettverk
+
+

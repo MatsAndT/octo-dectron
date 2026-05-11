@@ -6,6 +6,7 @@ Eksperimentene med Multi-Layer Perceptron (MLP) ble utført på et datasett best
 
 Ved bruk av GridSearchCV med 5-fold stratifisert kryssvalidering og macro-F1 som scoringsmetrikk ble den beste modellen identifisert med ett skjult lag med 64 nevroner, regulariseringsparameter α = 1,0 og læringsrate 0,001. Denne konfigurasjonen oppnådde en CV macro-F1 på 0,85, en treningsnøyaktighet på 98,90 % og en testnøyaktighet på 82,61 %, med en test macro-F1 på 0,82, som også kan indikere en form for overfitting. @tab-mlp-report oppsummerer per-klasse-ytelsen:
 
+
 #figure(
   table(
     columns: (auto, auto, auto, auto, auto),
@@ -32,14 +33,12 @@ Analyse av forvirringsmatrisen i @MLP_confusion gir en visuell fremstilling av m
 )<MLP_confusion>
 
 == CNN
-
 Eksperimentene med CNN ble gjennomført på det samme datasettet som MLP, bestående av 227 opptak fordelt over fem dronemoduser. I motsetning til MLP, som opererer på manuelt konstruerte feature-vektorer, ble CNN-modellen trent direkte på frekvensbåndet hentet via glidende vinduing av råsignalene. Hvert opptak ble representert som en matrise av form (300, 64), der 300 tilsvarer antall vinduer på 64 000 sampler med 50 % overlapping, og 64 tilsvarer 32 frekvensbånd fra henholdsvis lavt og høyt frekvensbånd.
 
-Som referansepunkt ble det innledningsvis testet en modell med for høy kapasitet — 203 461 parametere fordelt over tre konvolusjonsblokker med 64, 128 og 256 filtre. Denne modellen nådde en treningsnøyaktighet på om lag 89 %, mens valideringsnøyaktigheten stagnerte på 35 % og falt videre ved fortsatt trening. Forvirringsmatrisen viste at modellen hadde kollapset til å predikere nesten utelukkende én klasse. Dette bekreftet at modellens kapasitet var langt høyere enn det 181 treningsfiler kan bære.
+Som referansepunkt ble det innledningsvis testet en modell med for høy kapasitet — 203 461 parametere fordelt over tre konvolusjonsblokker med 64, 128 og 256 filtre. Denne modellen nådde en treningsnøyaktighet på om lag 89 %, mens valideringsnøyaktigheten stagnerte på 35 % og falt videre ved fortsatt trening. Forvirringsmatrisen viste at modellen hadde kollapset til å predikere nesten utelukkende én klasse. Dette bekreftet at modellens kapasitet var langt høyere enn det 181 treningsfiler kan bære..
 
-=== Testprosedyre
-
-Den endelige modellen er bevisst holdt liten (ca. 11 000 parametere) for å unngå at den bare "pugget" treningsdataene. Arkitekturen består av to lag som leter etter mønstre i signalene, etterfulgt av flere sikkerhetsmekanismer (L2-straff, dropout og kunstig støy) som tvinger modellen til å lære generelle kjennetegn fremfor uvesentlige detaljer.
+=== Testprsedyre
+Den endelige modellen er bevisst holdt liten (ca. 11 000 parametere) for å unngå overtilpassning til treningsdataene. Arkitekturen består av to lag som leter etter mønstre i signalene, etterfulgt av flere sikkerhetsmekanismer (L2-straff, dropout og kunstig støy) som tvinger modellen til å lære generelle kjennetegn fremfor uvesentlige detaljer.
 
 Selve treningen ble styrt av følgende grep:
 
@@ -48,6 +47,7 @@ Selve treningen ble styrt av følgende grep:
     - Smart avslutning: Treningen stoppet automatisk hvis modellen sluttet å forbedre seg på nye data (Early Stopping), og vi beholdt den aller beste versjonen av modellen.
 
     - Evaluering: Modellen ble testet på 20 % av dataene (46 opptak) som den aldri hadde sett før. Vi sørget for at denne testgruppen hadde nøyaktig samme fordeling av dronetyper som resten av settet (stratifisert splitting) for å få et ærlig svar på hvor god modellen faktisk er.
+
 
 === Resultater
 
@@ -85,9 +85,12 @@ Den endelige modellen oppnådde en testnøyaktighet på 71,7 % (33 av 46 korrekt
   caption: [Forvirringsmatrise for CNN-modellen på testsettet.]
 ) <fig-cnn-confusion>
 
-@fig-cnn-confusion viser forvirringsmatrisen for testsettet. Modellen klassifiserer modus 0 og modus 1 perfekt (henholdsvis 13/13 og 8/8 korrekte), og modus 4 med full recall (8/8). De største utfordringene finnes i modus 2 og modus 3, der modellen kun identifiserer 2 av 9 og 2 av 8 korrekt. For modus 2 klassifiseres 6 av 9 opptak feilaktig som modus 0, mens modus 3 fordeles mellom modus 0 (2 opptak) og modus 4 (4 opptak). Dette mønsteret, der modusene 2 og 3 forveksles med andre klasser fremfor med hverandre, tyder på at disse RF-signaturene deler kjennetegn med bakgrunnsaktivitet og flygesignaler fra andre moduser, heller enn at de er innbyrdes vanskelige å skille.
+@fig-cnn-confusion viser forvirringsmatrisen for testsettet. Modellen klassifiserer modus 0, 1 og 4 perfekt (henholdsvis 13/13, 8/8 og 8/8 korrekte, full recall). De største utfordringene finnes i modus 2 og modus 3, der modellen kun identifiserer 2 av 9 og 2 av 8 korrekt. For modus 2 klassifiseres 6 av 9 opptak feilaktig som modus 0, mens modus 3 fordeles mellom modus 0 (2 opptak) og modus 4 (4 opptak). Dette mønsteret, der modusene 2 og 3 forveksles med andre klasser fremfor med hverandre, tyder på at disse RF-signaturene deler kjennetegn med bakgrunnsaktivitet og flygesignaler fra andre moduser, heller enn at de er innbyrdes vanskelige å skille.
 
-Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. @tab-model-comparison oppsummerer ytelsen til alle modeller side om side:
+Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. 
+
+== Alle modeller
+@Kitchen_confusion viser forvirringsmatrisen til Kitchen-sink-modellen og @tab-model-comparison oppsummerer ytelsen til alle modeller side om side:
 
 #figure(
   table(
@@ -97,15 +100,21 @@ Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klas
       [*Modell*], [*Testnøyaktighet*], [*Macro-F1*],
     ),
     [Dummy Classifier], [28,26 %], [0,09],
-    [Kitchen Sink MLP], [84,78 %], [—],
+    [Kitchen Sink MLP], [84,78 %], [0.85],
     [MLP (GridSearchCV)], [82,61 %], [0,82],
     [CNN (~11k param)], [71,74 %], [0,66],
   ),
   caption: [Sammenligning av alle modeller på testsettet (N = 46).]
 ) <tab-model-comparison>
 
-MLP-lærings-kurver er ikke vist da sklearn sin MLPClassifier logger tap per epoke internt og ikke eksporterer dem i samme format som Keras. Tidlig stopp ble overvåket via validerings-tap internt i modellen. ROC-kurver for begge modeller er utelatt da de krever lagrede per-klasse sannsynligheter fra testkjøringen, noe som ikke ble samlet inn systematisk i dette prosjektet.
+
+#figure(
+  image("../img/Kitchen Sink.png", width: 70%),
+  caption: [Forrvirringsmatrisen til Kitchen-sink-modellen]
+) <Kitchen_confusion>
+
 
 === Begrensninger
+
 
 En vesentlig metodisk begrensning er at testsettet kun består av 46 opptak. Med så få testpunkter er estimatene for presisjon, recall og F1 per klasse statistisk usikre; for klasser med åtte til ni testeksempler vil ett enkelt feilklassifisert opptak gi et utslag på over ti prosentpoeng i recall. Resultatene bør derfor tolkes som en indikasjon på modellens generaliseringsevne heller enn som presise ytelsesestimater.

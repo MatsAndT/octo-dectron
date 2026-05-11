@@ -1,18 +1,17 @@
 = Datasett <Teori>
+
 I dette prosjektet bruker vi DroneRF-datasettet, som består av RF-opptak fra kommersielle droner under kontrollerte forhold @DroneRF_dataset. Datasettet inneholder opptak fra tre dronetyper: Parrot Bebop, Parrot AR Drone og DJI Phantom, samt bakgrunnsopptak uten aktiv drone. Klasseubalansen er moderat — den største klassen (63 opptak) er om lag 1,6 ganger større enn den minste (39 opptak) — og evaluering gjøres derfor med macro-F1 i tillegg til nøyaktighet.
 
-== Datastruktur og klassekoding
-Hvert opptak er knyttet til en BUI-kode (Bit Unique Identifier) der de tre første bit'ene identifiserer maskinvaren og de to siste beskriver dronens modus (se @bui):
+== Utvelging av features fra datasettet
+Hvert opptak er knyttet til en BUI-kode der de tre første bitene identifiserer maskinvaren og de to siste beskriver dronens modus:
 
   - Modus 1 (00): Påslått og tilkoblet kontroller.
   - Modus 2 (01): Automatisk _hovering_.
+
   - Modus 3 (10): Flyging uten videoopptak.
   - Modus 4 (11): Flyging med videoopptak.
 
-#figure(
-  image("../images/bui.png"),
-  caption: [Forklaring av BUI]
-)<bui>
+#image("../images/bui.png")
 
 Dronene kommuniserer over WiFi på 2,4 GHz med en total båndbredde på opptil 80 MHz @DroneRF_dataset. Siden én mottaker i forskningsprosjektet som har laget datasettet hadde 40 MHz øyeblikkelig båndbredde ble to mottakere benyttet parallelt — én for lavt bånd (L) og én for høyt bånd (H). Med 40 MHz samplingsfrekvens og 10 000 000 verdier per fil representerer én fil i datasettet 0,25 sekunder.
 
@@ -32,13 +31,16 @@ Frekvensinnholdet er mer stabilt enn tidsdomenet, siden dronene kommuniserer på
 - Relative, kontra fysiske frekvenser: Spekteret vi observerer representerer derfor ikke de absolutte overføringsfrekvensene (i 2,4 GHz-båndet), men snarere en konsekvent, relativ representasjon av signalets båndbredde og moduleringsegenskaper slik de fremstår etter nedmiksing til basebånd.
 For maskinlæring betyr dette at selv om spekteret ikke er "fysisk korrekt" i tradisjonell forstand, er den interne frekvensinformasjonen konsistent på tvers av alle opptak i datasettet. Maskinlæringsmodeller er svært effektive til å identifisere komplekse mønstre i slike relative data, så lenge de systematiske endringene (som folding) er like for alle klasser. Dette fordrer imidlertid at fremtidig bruk av modellen må benytte et identisk oppsett for opptak som det forskerne bak datasettet brukte. Modellen lærer ikke å kjenne dronen "i lufta", men snarere hvordan dronens signal ser ut gjennom akkurat denne spesifikke digitale "linsen" som er benyttet for å lage datasettet. @freq_1000L_0 viser sammenligningen mellom tid- og frekvensdomenet for en utvalgt CSV-fil fra datasettet.
 
+
 #figure(
   image("../img/11000L_0_freq.png", width: 90%),
   caption: [Tids- og frekvensdomene for 11000L_0]
 )<freq_1000L_0>
 
-
 DroneRF-datasettet har noen egenskaper som gjør det utfordrende å bruke direkte i maskinlæring. Opptakene er svært detaljerte tidsserier — en fil inneholder 10 millioner målepunkter — og kan ikke brukes direkte som individuelle treningspunkter. Selv etter vindusfunksjonen er RF-dataen høydimensjonal, noe som øker risikoen for overfitting, særlig med så få treningseksempler. Klasseubalansen er moderat, men nok til at modeller kan lære å favorisere majoritetsklassene.
+
+
+
 
 == Eksplorativ Dataanalyse (EDA)
 
@@ -64,3 +66,4 @@ Klassefordelingen er vist i @class_distribution_table. Frekvensbånds-energiene 
 == Forbehandling
 
 Datasettet ble delt 80/20 i trenings- og testsett med stratifisert splitting, slik at klassefordelingen er lik i begge settene. For hvert opptak beregnes frekvensbånds-energier fra L- og H-signalene via rFFT med Hanning-vindusvekting. CNN normaliserer per opptak ved å dele på absolutt maksimum. MLP normaliserer med RobustScaler tilpasset eksklusivt til treningssettet. Siden det er flere eksempler av noen droner enn andre, altså en klasseubalanse, har vi gitt de sjeldne dronene høyere vekt under treningen. Dette gjør at modellene lærer like mye fra alle klassene, selv om de ikke har like mye data.
+

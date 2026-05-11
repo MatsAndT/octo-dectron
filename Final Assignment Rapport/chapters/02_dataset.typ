@@ -1,7 +1,7 @@
 = Datasett <Teori>
 I dette prosjektet bruker vi DroneRF-datasettet, som består av RF-opptak fra kommersielle droner under kontrollerte forhold @DroneRF_dataset. Datasettet inneholder opptak fra tre dronetyper: Parrot Bebop, Parrot AR Drone og DJI Phantom, samt bakgrunnsopptak uten aktiv drone. Klasseubalansen er moderat — den største klassen (63 opptak) er om lag 1,6 ganger større enn den minste (39 opptak) — og evaluering gjøres derfor med macro-F1 i tillegg til nøyaktighet.
 
-== Utvelging av features fra datasettet
+== Datastruktur og klassekoding
 Hvert opptak er knyttet til en BUI-kode (Bit Unique Identifier) der de tre første bit'ene identifiserer maskinvaren og de to siste beskriver dronens modus (se @bui):
 
   - Modus 1 (00): Påslått og tilkoblet kontroller.
@@ -37,7 +37,6 @@ For maskinlæring betyr dette at selv om spekteret ikke er "fysisk korrekt" i tr
   caption: [Tids- og frekvensdomene for 11000L_0]
 )<freq_1000L_0>
 
-Begge modellene MLP og CNN bruker glidende vindusfunksjon: 64 000 sampler per vindu, 50 % overlapping, og 32 frekvensbånd per kanal via FFT. L- og H-båndet gir 64 frekvensbånds-energier per vindu, og alle opptak #highlight[paddes] eller avkortes til 300 vinduer. CNN mottar disse direkte som en (300, 64)-matrise. MLP komprimerer dem til 192 egenskaper ved å beregne gjennomsnitt-, standardavvik- og maksimal frekvens per frekvensbånd.
 
 DroneRF-datasettet har noen egenskaper som gjør det utfordrende å bruke direkte i maskinlæring. Opptakene er svært detaljerte tidsserier — en fil inneholder 10 millioner målepunkter — og kan ikke brukes direkte som individuelle treningspunkter. Selv etter vindusfunksjonen er RF-dataen høydimensjonal, noe som øker risikoen for overfitting, særlig med så få treningseksempler. Klasseubalansen er moderat, men nok til at modeller kan lære å favorisere majoritetsklassene.
 

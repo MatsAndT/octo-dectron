@@ -87,7 +87,24 @@ Den endelige modellen oppnådde en testnøyaktighet på 71,7 % (33 av 46 korrekt
 
 @fig-cnn-confusion viser forvirringsmatrisen for testsettet. Modellen klassifiserer modus 0 og modus 1 perfekt (henholdsvis 13/13 og 8/8 korrekte), og modus 4 med full recall (8/8). De største utfordringene finnes i modus 2 og modus 3, der modellen kun identifiserer 2 av 9 og 2 av 8 korrekt. For modus 2 klassifiseres 6 av 9 opptak feilaktig som modus 0, mens modus 3 fordeles mellom modus 0 (2 opptak) og modus 4 (4 opptak). Dette mønsteret, der modusene 2 og 3 forveksles med andre klasser fremfor med hverandre, tyder på at disse RF-signaturene deler kjennetegn med bakgrunnsaktivitet og flygesignaler fra andre moduser, heller enn at de er innbyrdes vanskelige å skille.
 
-Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. MLP-modellen oppnådde 82,61 % testnøyaktighet og macro-F1 på 0,82 på de samme dataene, noe som er noe høyere enn CNN.
+Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. @tab-model-comparison oppsummerer ytelsen til alle modeller side om side:
+
+#figure(
+  table(
+    columns: (auto, auto, auto),
+    align: center,
+    table.header(
+      [*Modell*], [*Testnøyaktighet*], [*Macro-F1*],
+    ),
+    [Dummy Classifier], [28,26 %], [0,09],
+    [Kitchen Sink MLP], [84,78 %], [—],
+    [MLP (GridSearchCV)], [82,61 %], [0,82],
+    [CNN (~11k param)], [71,74 %], [0,66],
+  ),
+  caption: [Sammenligning av alle modeller på testsettet (N = 46).]
+) <tab-model-comparison>
+
+MLP-lærings-kurver er ikke vist da sklearn sin MLPClassifier logger tap per epoke internt og ikke eksporterer dem i samme format som Keras. Tidlig stopp ble overvåket via validerings-tap internt i modellen. ROC-kurver for begge modeller er utelatt da de krever lagrede per-klasse sannsynligheter fra testkjøringen, noe som ikke ble samlet inn systematisk i dette prosjektet.
 
 === Begrensninger
 

@@ -94,9 +94,16 @@ def run_kitchen_sink(X: np.ndarray, y: np.ndarray) -> None:
                               max_iter=2000, random_state=42)),
     ])
     pipe.fit(X_train, y_train)
+    y_pred = pipe.predict(X_test)
     print("\n--- KITCHEN SINK (Stor & Uregulert) ---")
     print(f"Train accuracy : {pipe.score(X_train, y_train):.4f}")
     print(f"Test accuracy  : {pipe.score(X_test, y_test):.4f}")
+    print(f"Test  macro-F1 : {f1_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
+
+    disp = ConfusionMatrixDisplay.from_predictions(y_test, y_pred, cmap="Blues")
+    disp.ax_.set_title("MLP v2 Kitchen Sink — Confusion Matrix")
+    plt.tight_layout()
+    plt.show()
 
 
 def run_mlp_v2(X: np.ndarray, y: np.ndarray) -> tuple:

@@ -45,3 +45,15 @@ Sett opp mot de tre forskningsspørsmålene fra innledningen:
 2. *CNN på vinduesekvenser:* Modellen nådde 71,74 % testnøyaktighet og macro-F1 0,66 — klart over baseline, men svakere enn MLP. Kapasitetsbegrensningen (11k parametere) og BUI-kode-problemet for modus 2/3 er de viktigste forklaringene.
 
 3. *Hvilke moduser forveksles, og hvorfor:* Modus 2 og 3 gir lavest ytelse i begge modeller. Feilmønsteret — at de forveksles med modus 0 og 4 snarere enn med hverandre — tyder på at BUI-koden slår sammen for ulike RF-signaturer i én klasse, og at dette er en datasettstruktur-svakhet snarere enn en modellsvakhet.
+
+== Hvorfor gjør Kitchen Sink det best?
+
+Kitchen Sink-modellen er en uregulert MLP med to skjulte lag (256 og 128 nevroner) og ingen L2-straff (α = 0). Den oppnår 100 % treningsnøyaktighet, noe som viser at den memorerer treningsdataene. Likevel ender den øverst i testnøyaktighet (84,78 %) og macro-F1 (0,85), over den regulariserte MLP-en som ble søkt systematisk med GridSearchCV.
+
+Den viktigste forklaringen er at forskjellen er svært liten: 84,78 % av 46 testopptak tilsvarer 39 riktige, mens 82,61 % tilsvarer 38 riktige — én prøve. Med et testsett på 46 opptak er standardfeilen på en nøyaktighetsestimator stor nok til at de to modellene statistisk sett er likeverdige. En annen tilfeldig oppdeling av trenings- og testsett kunne like gjerne snu rekkefølgen.
+
+En annen del av forklaringen ligger i hva som ble optimert. GridSearchCV søkte etter høyest mulig macro-F1, ikke høyest nøyaktighet. Macro-F1 vekter alle klasser likt, noe som betyr at GridSearchCV bevisst ofret litt nøyaktighet på majoritetsklassen for å forbedre recall på de sjeldnere klassene. Kitchen Sink ble aldri optimert mot noe som helst — den bare fikk frihet til å lære treningsdataene fullt ut.
+
+En tredje faktor er at datasettet er samlet inn under kontrollerte forhold, og at train/test-splitten er stratifisert. Det betyr at trenings- og testsettet er svært like i sammensetning. Når treningsdata og testdata kommer fra de samme opptakssesjonene under de samme forholdene, er det ikke urimelig at en modell som har memorert treningsdataene likevel treffer godt på testsettet — fordi testdataene faktisk ligner treningsdataene mer enn de ville gjort i et reelt scenario med nye droner, nye miljøer eller annet utstyr.
+
+Samlet sett er Kitchen Sinks ledelse ikke et tegn på at memorering er en god strategi, men snarere et resultat av et lite testsett, ulikt optimaliseringsmål og et homogent datasett. I et større og mer variert datasett ville trolig det regulariserte og systematisk optimerte alternativet komme bedre ut.

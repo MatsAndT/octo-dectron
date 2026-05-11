@@ -89,8 +89,9 @@ Den endelige modellen oppnådde en testnøyaktighet på 71,7 % (33 av 46 korrekt
 
 Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. 
 
-== Alle modeller
-@Kitchen_confusion viser forvirringsmatrisen til Kitchen-sink-modellen og @tab-model-comparison oppsummerer ytelsen til alle modeller side om side:
+== Sammenligning alle modeller
+
+@tab-model-comparison oppsummerer testnøyaktighet og macro-F1 for alle fire modeller, og @Kitchen_confusion viser forvirringsmatrisen for Kitchen Sink-modellen.
 
 #figure(
   table(
@@ -100,18 +101,19 @@ Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klas
       [*Modell*], [*Testnøyaktighet*], [*Macro-F1*],
     ),
     [Dummy Classifier], [28,26 %], [0,09],
-    [Kitchen Sink MLP], [84,78 %], [0.85],
+    [Kitchen Sink MLP], [84,78 %], [0,85],
     [MLP (GridSearchCV)], [82,61 %], [0,82],
     [CNN (~11k param)], [71,74 %], [0,66],
   ),
   caption: [Sammenligning av alle modeller på testsettet (N = 46).]
 ) <tab-model-comparison>
 
-
 #figure(
   image("../img/Kitchen Sink.png", width: 70%),
-  caption: [Forrvirringsmatrisen til Kitchen-sink-modellen]
+  caption: [Forvirringsmatrise for Kitchen Sink-modellen på testsettet.]
 ) <Kitchen_confusion>
+
+Rangeringen etter nøyaktighet er Kitchen Sink (84,78 %) \> MLP (82,61 %) \> CNN (71,74 %) \> Dummy (28,26 %). Etter macro-F1 er bildet det samme: Kitchen Sink (0,85) \> MLP (0,82) \> CNN (0,66) \> Dummy (0,09). Kitchen Sink er altså øverst på begge mål, til tross for 100 % treningsnøyaktighet og ingen regularisering — et resultat som krever nærmere forklaring og som drøftes i kapittel 5.
 
 
 === Begrensninger

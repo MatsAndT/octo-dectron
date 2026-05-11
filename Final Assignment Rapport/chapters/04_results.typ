@@ -89,6 +89,8 @@ Den endelige modellen oppnådde en testnøyaktighet på 71,7 % (33 av 46 korrekt
 
 Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klasseubalansen, og overstiger klart det en tilfeldig klassifiserer ville oppnå. 
 
+
+
 == Sammenligning alle modeller
 
 @tab-model-comparison oppsummerer testnøyaktighet og macro-F1 for alle fire modeller, og @Kitchen_confusion viser forvirringsmatrisen for Kitchen Sink-modellen.
@@ -115,8 +117,7 @@ Macro-F1 på 0,66 er et mer representativt mål enn total nøyaktighet gitt klas
 
 Rangeringen etter nøyaktighet er Kitchen Sink (84,78 %) \> MLP (82,61 %) \> CNN (71,74 %) \> Dummy (28,26 %). Etter macro-F1 er bildet det samme: Kitchen Sink (0,85) \> MLP (0,82) \> CNN (0,66) \> Dummy (0,09). Kitchen Sink er altså øverst på begge mål, til tross for 100 % treningsnøyaktighet og ingen regularisering — et resultat som krever nærmere forklaring og som drøftes i kapittel 5.
 
-
-=== Begrensninger
+== Begrensninger
 
 
 En vesentlig metodisk begrensning er at testsettet kun består av 46 opptak. Med så få testpunkter er estimatene for presisjon, recall og F1 per klasse statistisk usikre; for klasser med åtte til ni testeksempler vil ett enkelt feilklassifisert opptak gi et utslag på over ti prosentpoeng i recall. Resultatene bør derfor tolkes som en indikasjon på modellens generaliseringsevne heller enn som presise ytelsesestimater.
